@@ -20,6 +20,10 @@ func main() {
         log.Fatalf("connecting to postgres: %v", err)
     }
 
+    if err := config.RunMigrations(db); err != nil {
+        log.Fatalf("running migrations: %v", err)
+    }
+
     redisClient, err := config.NewRedis(&cfg.Redis)
     if err != nil {
         log.Fatalf("connecting to redis: %v", err)

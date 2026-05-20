@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 
+	"github.com/zorojuro75/notiq/internal/repository/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -25,4 +26,10 @@ func NewPostgres(cfg *DBConfig) (*gorm.DB, error) {
     sqlDB.SetMaxIdleConns(10)
 
     return db, nil
+}
+
+func RunMigrations(db *gorm.DB) error {
+    return db.AutoMigrate(
+        &models.Job{},
+    )
 }

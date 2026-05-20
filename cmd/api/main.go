@@ -1,12 +1,15 @@
 package main
 
 import (
-    "fmt"
-    "log"
+	"fmt"
+	"log"
 
-    "github.com/zorojuro75/notiq/config"
-    httpdelivery "github.com/zorojuro75/notiq/internal/delivery/http"
-    "github.com/zorojuro75/notiq/internal/delivery/http/handler"
+	"github.com/zorojuro75/notiq/config"
+	httpdelivery "github.com/zorojuro75/notiq/internal/delivery/http"
+	"github.com/zorojuro75/notiq/internal/delivery/http/handler"
+	"github.com/zorojuro75/notiq/internal/repository/postgres"
+	"github.com/zorojuro75/notiq/internal/usecase/job"
+	"github.com/zorojuro75/notiq/pkg/queue"
 )
 
 func main() {
@@ -29,11 +32,26 @@ func main() {
         log.Fatalf("connecting to redis: %v", err)
     }
 
+    // repositories
+    jobRepo := postgres.NewJobRepository(db)
+
+    // queue client
+    queueClient := queue.NewClient(
+        cfg.Redis.Addr,
+        cfg.Redis.Password,
+        cfg.Redis.DB,
+    )
+    defer queueClient.Close()
+
+    // use cases
+    jobUC := job.NewJobUseCase(jobRepo, queueClient)
+
     // handlers
     healthHandler := handler.NewHealthHandler(db, redisClient)
+    jobHandler := handler.NewJobHandler(jobUC)
 
     // router
-    router := httpdelivery.NewRouter(healthHandler)
+    router := httpdelivery.NewRouter(healthHandler, jobHandler)
 
     addr := fmt.Sprintf(":%s", cfg.App.Port)
     log.Printf("server starting on %s", addr)

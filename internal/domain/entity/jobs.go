@@ -15,6 +15,7 @@ const (
     JobStatusDone       JobStatus = "done"
     JobStatusFailed     JobStatus = "failed"
     JobStatusDead       JobStatus = "dead"
+    JobStatusCancelled  JobStatus = "cancelled"
 )
 
 type JobType string

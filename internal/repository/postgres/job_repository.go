@@ -46,7 +46,7 @@ func (r *jobRepository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Job,
     return m.ToEntity(), nil
 }
 
-func (r *jobRepository) List(ctx context.Context, filter domainrepo.JobFilter, page, pageSize int) ([]*entity.Job, int64, error) {
+func (r *jobRepository) List(ctx context.Context, filter entity.JobFilter, page, pageSize int) ([]*entity.Job, int64, error) {
     var ms []models.Job
     var total int64
 

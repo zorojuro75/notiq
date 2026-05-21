@@ -15,3 +15,8 @@ type EnqueueJobInput struct {
 type EnqueueJobOutput struct {
     Job *Job
 }
+
+type JobFilter struct {
+    Status *JobStatus
+    Type   *JobType
+}

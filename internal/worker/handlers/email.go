@@ -36,7 +36,7 @@ func (h *EmailHandler) Handle(ctx context.Context, task *asynq.Task) error {
 		}
 		return fmt.Errorf("preparing job: %w", err)
 	}
-
+	
 	var p emailPayload
 	if err := json.Unmarshal(job.Payload, &p); err != nil {
 		_ = h.FailOrDead(ctx, job)

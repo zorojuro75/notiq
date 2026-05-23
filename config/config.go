@@ -1,16 +1,18 @@
 package config
 
 import (
-    "fmt"
-    "log"
+	"fmt"
+	"log"
+	"time"
 
-    "github.com/spf13/viper"
+	"github.com/spf13/viper"
 )
 
 type Config struct {
     App   AppConfig
     DB    DBConfig
     Redis RedisConfig
+    Worker WorkerConfig
 }
 
 type AppConfig struct {
@@ -31,6 +33,10 @@ type RedisConfig struct {
     Addr     string
     Password string
     DB       int
+}
+
+type WorkerConfig struct {
+    ShutdownTimeout time.Duration
 }
 
 func Load() (*Config, error) {
@@ -58,6 +64,9 @@ func Load() (*Config, error) {
             Addr:     viper.GetString("REDIS_ADDR"),
             Password: viper.GetString("REDIS_PASSWORD"),
             DB:       viper.GetInt("REDIS_DB"),
+        },
+        Worker: WorkerConfig{
+            ShutdownTimeout: viper.GetDuration("WORKER_SHUTDOWN_TIMEOUT"),
         },
     }, nil
 }

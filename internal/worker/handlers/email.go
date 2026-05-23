@@ -39,7 +39,7 @@ func (h *EmailHandler) Handle(ctx context.Context, task *asynq.Task) error {
 
 	var p emailPayload
 	if err := json.Unmarshal(job.Payload, &p); err != nil {
-		_ = h.Fail(ctx, job.ID, job.RetryCount)
+		_ = h.FailOrDead(ctx, job)
 		return fmt.Errorf("decoding email payload: %w", err)
 	}
 

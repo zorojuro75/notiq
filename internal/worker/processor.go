@@ -3,10 +3,12 @@ package worker
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/zorojuro75/notiq/internal/worker/handlers"
 	"github.com/zorojuro75/notiq/pkg/queue"
+	"github.com/zorojuro75/notiq/pkg/retry"
 )
 
 type Processor struct {
@@ -36,6 +38,14 @@ func NewProcessor(
 		},
 		asynq.Config{
 			Concurrency: pool.numWorkers,
+
+			RetryDelayFunc: func(attempt int, err error, task *asynq.Task) time.Duration {
+				delay := retry.Backoff(attempt)
+				log.Printf("[RETRY] task=%s attempt=%d next_in=%v err=%v",
+					task.Type(), attempt, delay, err)
+				return delay
+			},
+			
 			ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
 				log.Printf("[ASYNQ ERROR] task=%s err=%v", task.Type(), err)
 			}),

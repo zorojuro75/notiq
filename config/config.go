@@ -24,6 +24,7 @@ type DBConfig struct {
     Password string
     Name     string
     SSLMode  string
+    LogLevel string
 }
 
 type RedisConfig struct {
@@ -51,6 +52,7 @@ func Load() (*Config, error) {
             Password: viper.GetString("DB_PASSWORD"),
             Name:     viper.GetString("DB_NAME"),
             SSLMode:  viper.GetString("DB_SSLMODE"),
+            LogLevel: viper.GetString("DB_LOG_LEVEL"),
         },
         Redis: RedisConfig{
             Addr:     viper.GetString("REDIS_ADDR"),

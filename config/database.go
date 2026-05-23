@@ -11,7 +11,7 @@ import (
 
 func NewPostgres(cfg *DBConfig) (*gorm.DB, error) {
     db, err := gorm.Open(postgres.Open(cfg.DSN()), &gorm.Config{
-        Logger: logger.Default.LogMode(logger.Info),
+        Logger: logger.Default.LogMode(gormLogLevel(cfg.LogLevel)),
     })
     if err != nil {
         return nil, fmt.Errorf("connecting to postgres: %w", err)
@@ -32,4 +32,19 @@ func RunMigrations(db *gorm.DB) error {
     return db.AutoMigrate(
         &models.Job{},
     )
+}
+
+func gormLogLevel(level string) logger.LogLevel {
+    switch level {
+    case "info":
+        return logger.Info
+    case "warn":
+        return logger.Warn
+    case "error":
+        return logger.Error
+    case "silent":
+        return logger.Silent
+    default:
+        return logger.Warn
+    }
 }

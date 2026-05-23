@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
@@ -65,4 +66,17 @@ func (b *BaseHandler) Fail(ctx context.Context, jobID uuid.UUID, retryCount int)
 
 func (b *BaseHandler) Dead(ctx context.Context, jobID uuid.UUID) error {
 	return b.jobRepo.UpdateStatus(ctx, jobID, entity.JobStatusDead)
+}
+func (b *BaseHandler) FailOrDead(ctx context.Context, job *entity.Job) error {
+	if IsLastAttempt(job) {
+		log.Printf("[DEAD] job %s exhausted all %d retries", job.ID, job.MaxRetries)
+		return b.Dead(ctx, job.ID)
+	}
+	log.Printf("[FAILED] job %s attempt %d of %d — will retry",
+		job.ID, job.RetryCount+1, job.MaxRetries)
+	return b.Fail(ctx, job.ID, job.RetryCount)
+}
+
+func IsLastAttempt(job *entity.Job) bool {
+	return job.RetryCount+1 >= job.MaxRetries
 }

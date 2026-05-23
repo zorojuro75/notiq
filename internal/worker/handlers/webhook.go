@@ -46,7 +46,7 @@ func (h *WebhookHandler) Handle(ctx context.Context, task *asynq.Task) error {
 
 	var p webhookPayload
 	if err := json.Unmarshal(job.Payload, &p); err != nil {
-		_ = h.Fail(ctx, job.ID, job.RetryCount)
+		_ = h.FailOrDead(ctx, job)
 		return fmt.Errorf("decoding webhook payload: %w", err)
 	}
 
@@ -58,20 +58,20 @@ func (h *WebhookHandler) Handle(ctx context.Context, task *asynq.Task) error {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.URL, bytes.NewBuffer(body))
 	if err != nil {
-		_ = h.Fail(ctx, job.ID, job.RetryCount)
+		_ = h.FailOrDead(ctx, job)
 		return fmt.Errorf("building request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
-		_ = h.Fail(ctx, job.ID, job.RetryCount)
+		_ = h.FailOrDead(ctx, job)
 		return fmt.Errorf("calling webhook url %s: %w", p.URL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		_ = h.Fail(ctx, job.ID, job.RetryCount)
+		_ = h.FailOrDead(ctx, job)
 		return fmt.Errorf("webhook returned %d", resp.StatusCode)
 	}
 

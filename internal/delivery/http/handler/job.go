@@ -1,17 +1,18 @@
 package handler
 
 import (
-    "encoding/json"
-    "net/http"
-    "strconv"
-    "time"
+	"encoding/json"
+	"log"
+	"net/http"
+	"strconv"
+	"time"
 
-    "github.com/gin-gonic/gin"
-    "github.com/google/uuid"
-    "github.com/zorojuro75/notiq/internal/domain/contracts"
-    "github.com/zorojuro75/notiq/internal/domain/entity"
-    "github.com/zorojuro75/notiq/pkg/apperror"
-    "github.com/zorojuro75/notiq/pkg/response"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/zorojuro75/notiq/internal/domain/contracts"
+	"github.com/zorojuro75/notiq/internal/domain/entity"
+	"github.com/zorojuro75/notiq/pkg/apperror"
+	"github.com/zorojuro75/notiq/pkg/response"
 )
 
 type JobHandler struct {
@@ -71,13 +72,17 @@ func (h *JobHandler) Enqueue(c *gin.Context) {
 	}
 
 	if req.ScheduledAt != nil {
-		t, err := time.Parse(time.RFC3339, *req.ScheduledAt)
-		if err != nil {
-			response.BadRequest(c, "invalid scheduled_at: use RFC3339 format")
-			return
-		}
-		input.ScheduledAt = &t
-	}
+        t, err := time.Parse(time.RFC3339, *req.ScheduledAt)
+        if err != nil {
+            response.BadRequest(c, "invalid scheduled_at: use RFC3339 format")
+            return
+        }
+        if t.Before(time.Now().UTC()) {
+            log.Printf("[HANDLER] scheduled_at is in the past — treating as immediate")
+        } else {
+            input.ScheduledAt = &t
+        }
+    }
 
 	out, err := h.jobUC.Enqueue(c.Request.Context(), input)
 	if err != nil {
@@ -132,6 +137,11 @@ func (h *JobHandler) List(c *gin.Context) {
         filter.Type = &jobType
     }
 
+    if c.Query("scheduled") == "true" {
+		scheduled := true
+		filter.Scheduled = &scheduled
+	}
+
     jobs, total, err := h.jobUC.List(c.Request.Context(), filter, page, pageSize)
     if err != nil {
         response.InternalError(c, "failed to list jobs")
@@ -177,7 +187,7 @@ func (h *JobHandler) Cancel(c *gin.Context) {
     response.OK(c, gin.H{"message": "job cancelled"})
 }
 
-// ── helpers ────────────────────────────────────────────
+// ── helpers ──
 
 func toJobResponse(j *entity.Job) jobResponse {
     r := jobResponse{

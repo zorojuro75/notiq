@@ -1,28 +1,33 @@
 package job
 
 import (
-    "context"
-    "fmt"
+	"context"
+	"fmt"
+	"log"
+	"time"
 
-    "github.com/google/uuid"
-    "github.com/zorojuro75/notiq/internal/domain/entity"
-    "github.com/zorojuro75/notiq/internal/domain/repository"
-    "github.com/zorojuro75/notiq/pkg/apperror"
-    "github.com/zorojuro75/notiq/pkg/queue"
+	"github.com/google/uuid"
+	"github.com/zorojuro75/notiq/internal/domain/entity"
+	"github.com/zorojuro75/notiq/internal/domain/repository"
+	"github.com/zorojuro75/notiq/pkg/apperror"
+	"github.com/zorojuro75/notiq/pkg/queue"
 )
 
 type JobUseCase struct {
     jobRepo     repository.JobRepository
     queueClient *queue.Client
+    inspector   *queue.Inspector
 }
 
 func NewJobUseCase(
     jobRepo repository.JobRepository,
     queueClient *queue.Client,
+    inspector *queue.Inspector,
 ) *JobUseCase {
     return &JobUseCase{
         jobRepo:     jobRepo,
         queueClient: queueClient,
+        inspector:   inspector,
     }
 }
 
@@ -88,24 +93,36 @@ func (uc *JobUseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Job, e
 }
 
 func (uc *JobUseCase) List(ctx context.Context, filter entity.JobFilter, page, pageSize int) ([]*entity.Job, int64, error) {
-    if page <= 0 {
-        page = 1
-    }
-    if pageSize <= 0 || pageSize > 100 {
-        pageSize = 20
-    }
-    return uc.jobRepo.List(ctx, filter, page, pageSize)
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 20
+	}
+	return uc.jobRepo.List(ctx, filter, page, pageSize)
 }
 
 func (uc *JobUseCase) Cancel(ctx context.Context, id uuid.UUID) error {
-    job, err := uc.jobRepo.GetByID(ctx, id)
-    if err != nil {
-        return err
-    }
-    if job.Status != entity.JobStatusPending {
-        return apperror.ErrJobNotCancellable
-    }
-    return uc.jobRepo.UpdateStatus(ctx, id, entity.JobStatusCancelled)
+	job, err := uc.jobRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if job.Status != entity.JobStatusPending {
+		return apperror.ErrJobNotCancellable
+	}
+
+	if err := uc.jobRepo.UpdateStatus(ctx, id, entity.JobStatusCancelled); err != nil {
+		return err
+	}
+
+	if job.ScheduledAt != nil && job.ScheduledAt.After(time.Now().UTC()) {
+		if err := uc.inspector.DeleteTask("default", id.String()); err != nil {
+			log.Printf("[CANCEL] failed to remove task %s from Redis: %v", id, err)
+		}
+	}
+
+	return nil
 }
 
 func jobTypeToTaskType(t entity.JobType) string {

@@ -9,58 +9,66 @@ import (
 	"github.com/zorojuro75/notiq/internal/delivery/http/handler"
 	"github.com/zorojuro75/notiq/internal/repository/postgres"
 	"github.com/zorojuro75/notiq/internal/usecase/job"
-    "github.com/zorojuro75/notiq/internal/usecase/webhook"
+	"github.com/zorojuro75/notiq/internal/usecase/webhook"
 	"github.com/zorojuro75/notiq/pkg/queue"
 )
 
 func main() {
-    cfg, err := config.Load()
-    if err != nil {
-        log.Fatalf("loading config: %v", err)
-    }
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("loading config: %v", err)
+	}
 
-    db, err := config.NewPostgres(&cfg.DB)
-    if err != nil {
-        log.Fatalf("connecting to postgres: %v", err)
-    }
+	db, err := config.NewPostgres(&cfg.DB)
+	if err != nil {
+		log.Fatalf("connecting to postgres: %v", err)
+	}
 
-    if err := config.RunMigrations(db); err != nil {
-        log.Fatalf("running migrations: %v", err)
-    }
+	if err := config.RunMigrations(db); err != nil {
+		log.Fatalf("running migrations: %v", err)
+	}
 
-    redisClient, err := config.NewRedis(&cfg.Redis)
-    if err != nil {
-        log.Fatalf("connecting to redis: %v", err)
-    }
+	redisClient, err := config.NewRedis(&cfg.Redis)
+	if err != nil {
+		log.Fatalf("connecting to redis: %v", err)
+	}
 
-    // repositories
-    jobRepo := postgres.NewJobRepository(db)
-    webhookRepo := postgres.NewWebhookRepository(db)
+	// repositories
+	jobRepo := postgres.NewJobRepository(db)
+	webhookRepo := postgres.NewWebhookRepository(db)
 
-    // queue client
-    queueClient := queue.NewClient(
-        cfg.Redis.Addr,
-        cfg.Redis.Password,
+	// queue client
+	queueClient := queue.NewClient(
+		cfg.Redis.Addr,
+		cfg.Redis.Password,
+		cfg.Redis.DB,
+	)
+	defer queueClient.Close()
+
+    // inspector
+	inspector := queue.NewInspector(
+        cfg.Redis.Addr, 
+        cfg.Redis.Password, 
         cfg.Redis.DB,
     )
-    defer queueClient.Close()
+	defer inspector.Close()
 
-    // use cases
-    jobUC := job.NewJobUseCase(jobRepo, queueClient)
-    webhookUC := webhook.NewWebhookUseCase(webhookRepo) 
+	// use cases
+	jobUC := job.NewJobUseCase(jobRepo, queueClient, inspector)
+	webhookUC := webhook.NewWebhookUseCase(webhookRepo)
 
-    // handlers
-    healthHandler := handler.NewHealthHandler(db, redisClient)
-    jobHandler := handler.NewJobHandler(jobUC)
-    webhookHandler := handler.NewWebhookHandler(webhookUC)
+	// handlers
+	healthHandler := handler.NewHealthHandler(db, redisClient)
+	jobHandler := handler.NewJobHandler(jobUC)
+	webhookHandler := handler.NewWebhookHandler(webhookUC)
 
-    // router
-    router := httpdelivery.NewRouter(healthHandler, jobHandler, webhookHandler)
+	// router
+	router := httpdelivery.NewRouter(healthHandler, jobHandler, webhookHandler)
 
-    addr := fmt.Sprintf(":%s", cfg.App.Port)
-    log.Printf("server starting on %s", addr)
+	addr := fmt.Sprintf(":%s", cfg.App.Port)
+	log.Printf("server starting on %s", addr)
 
-    if err := router.Run(addr); err != nil {
-        log.Fatalf("server error: %v", err)
-    }
+	if err := router.Run(addr); err != nil {
+		log.Fatalf("server error: %v", err)
+	}
 }

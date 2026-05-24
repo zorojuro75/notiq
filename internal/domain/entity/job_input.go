@@ -19,6 +19,7 @@ type EnqueueJobOutput struct {
 }
 
 type JobFilter struct {
-    Status *JobStatus
-    Type   *JobType
+    Status    *JobStatus
+	Type      *JobType
+	Scheduled *bool
 }

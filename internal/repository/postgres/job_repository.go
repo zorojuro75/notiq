@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -74,33 +75,41 @@ func (r *jobRepository) GetByIdempotencyKey(ctx context.Context, key string) (*e
 }
 
 func (r *jobRepository) List(ctx context.Context, filter entity.JobFilter, page, pageSize int) ([]*entity.Job, int64, error) {
-    var ms []models.Job
-    var total int64
+	var ms []models.Job
+	var total int64
 
-    q := r.db.WithContext(ctx).Model(&models.Job{})
+	q := r.db.WithContext(ctx).Model(&models.Job{})
 
-    if filter.Status != nil {
-        q = q.Where("status = ?", string(*filter.Status))
-    }
-    if filter.Type != nil {
-        q = q.Where("type = ?", string(*filter.Type))
-    }
+	if filter.Status != nil {
+		q = q.Where("status = ?", string(*filter.Status))
+	}
 
-    if err := q.Count(&total).Error; err != nil {
-        return nil, 0, err
-    }
+	if filter.Type != nil {
+		q = q.Where("type = ?", string(*filter.Type))
+	}
 
-    offset := (page - 1) * pageSize
-    if err := q.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&ms).Error; err != nil {
-        return nil, 0, err
-    }
+	if filter.Scheduled != nil && *filter.Scheduled {
+		q = q.Where("status = ? AND scheduled_at IS NOT NULL AND scheduled_at > ?",
+			string(entity.JobStatusPending),
+			time.Now().UTC(),
+		)
+	}
 
-    jobs := make([]*entity.Job, len(ms))
-    for i, m := range ms {
-        m := m
-        jobs[i] = m.ToEntity()
-    }
-    return jobs, total, nil
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * pageSize
+	if err := q.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&ms).Error; err != nil {
+		return nil, 0, err
+	}
+
+	jobs := make([]*entity.Job, len(ms))
+	for i, m := range ms {
+		m := m
+		jobs[i] = m.ToEntity()
+	}
+	return jobs, total, nil
 }
 
 func (r *jobRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status entity.JobStatus) error {

@@ -9,6 +9,7 @@ import (
 	"github.com/zorojuro75/notiq/internal/delivery/http/handler"
 	"github.com/zorojuro75/notiq/internal/repository/postgres"
 	"github.com/zorojuro75/notiq/internal/usecase/job"
+    "github.com/zorojuro75/notiq/internal/usecase/webhook"
 	"github.com/zorojuro75/notiq/pkg/queue"
 )
 
@@ -34,6 +35,7 @@ func main() {
 
     // repositories
     jobRepo := postgres.NewJobRepository(db)
+    webhookRepo := postgres.NewWebhookRepository(db)
 
     // queue client
     queueClient := queue.NewClient(
@@ -45,13 +47,15 @@ func main() {
 
     // use cases
     jobUC := job.NewJobUseCase(jobRepo, queueClient)
+    webhookUC := webhook.NewWebhookUseCase(webhookRepo) 
 
     // handlers
     healthHandler := handler.NewHealthHandler(db, redisClient)
     jobHandler := handler.NewJobHandler(jobUC)
+    webhookHandler := handler.NewWebhookHandler(webhookUC)
 
     // router
-    router := httpdelivery.NewRouter(healthHandler, jobHandler)
+    router := httpdelivery.NewRouter(healthHandler, jobHandler, webhookHandler)
 
     addr := fmt.Sprintf(":%s", cfg.App.Port)
     log.Printf("server starting on %s", addr)

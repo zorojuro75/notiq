@@ -31,6 +31,7 @@ func NewPostgres(cfg *DBConfig) (*gorm.DB, error) {
 func RunMigrations(db *gorm.DB) error {
     return db.AutoMigrate(
         &models.Job{},
+        &models.Webhook{},
     )
 }
 

@@ -8,6 +8,7 @@ import (
 func NewRouter(
     healthHandler *handler.HealthHandler,
     jobHandler *handler.JobHandler,
+    webhookHandler *handler.WebhookHandler,
 ) *gin.Engine {
     r := gin.Default()
 
@@ -21,6 +22,13 @@ func NewRouter(
             jobs.GET("", jobHandler.List)
             jobs.GET("/:id", jobHandler.GetByID)
             jobs.DELETE("/:id", jobHandler.Cancel)
+        }
+
+        webhooks := v1.Group("/webhooks")
+        {
+            webhooks.POST("", webhookHandler.Create)
+            webhooks.GET("", webhookHandler.List)
+            webhooks.DELETE("/:id", webhookHandler.Delete)
         }
     }
 

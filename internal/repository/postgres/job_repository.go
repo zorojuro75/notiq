@@ -1,16 +1,17 @@
 package postgres
 
 import (
-    "context"
-    "errors"
+	"context"
+	"errors"
 
-    "github.com/google/uuid"
-    "gorm.io/gorm"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
+	"gorm.io/gorm"
 
-    "github.com/zorojuro75/notiq/internal/domain/entity"
-    domainrepo "github.com/zorojuro75/notiq/internal/domain/repository"
-    "github.com/zorojuro75/notiq/internal/repository/models"
-    "github.com/zorojuro75/notiq/pkg/apperror"
+	"github.com/zorojuro75/notiq/internal/domain/entity"
+	domainrepo "github.com/zorojuro75/notiq/internal/domain/repository"
+	"github.com/zorojuro75/notiq/internal/repository/models"
+	"github.com/zorojuro75/notiq/pkg/apperror"
 )
 
 type jobRepository struct {
@@ -22,16 +23,28 @@ func NewJobRepository(db *gorm.DB) domainrepo.JobRepository {
 }
 
 func (r *jobRepository) Create(ctx context.Context, job *entity.Job) error {
-    if job.ID == uuid.Nil {
-        job.ID = uuid.New()
-    }
-    m := models.FromJobEntity(job)
-    if err := r.db.WithContext(ctx).Create(m).Error; err != nil {
-        return err
-    }
-    job.CreatedAt = m.CreatedAt
-    job.UpdatedAt = m.UpdatedAt
-    return nil
+	if job.ID == uuid.Nil {
+		job.ID = uuid.New()
+	}
+	m := models.FromJobEntity(job)
+	if err := r.db.WithContext(ctx).Create(m).Error; err != nil {
+		// check for unique constraint violation on idempotency_key
+		if isUniqueViolation(err) {
+			return apperror.ErrDuplicateIdempotencyKey
+		}
+		return err
+	}
+	job.CreatedAt = m.CreatedAt
+	job.UpdatedAt = m.UpdatedAt
+	return nil
+}
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
+	}
+	return false
 }
 
 func (r *jobRepository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Job, error) {
@@ -44,6 +57,20 @@ func (r *jobRepository) GetByID(ctx context.Context, id uuid.UUID) (*entity.Job,
         return nil, err
     }
     return m.ToEntity(), nil
+}
+
+func (r *jobRepository) GetByIdempotencyKey(ctx context.Context, key string) (*entity.Job, error) {
+	var m models.Job
+	err := r.db.WithContext(ctx).
+		Where("idempotency_key = ?", key).
+		First(&m).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperror.ErrJobNotFound
+		}
+		return nil, err
+	}
+	return m.ToEntity(), nil
 }
 
 func (r *jobRepository) List(ctx context.Context, filter entity.JobFilter, page, pageSize int) ([]*entity.Job, int64, error) {

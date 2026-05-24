@@ -34,6 +34,7 @@ type Job struct {
     Status         JobStatus
     RetryCount     int
     MaxRetries     int
+    IdempotencyKey *string
     ScheduledAt    *time.Time
     CreatedAt      time.Time
     UpdatedAt      time.Time

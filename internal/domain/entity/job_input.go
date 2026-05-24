@@ -6,14 +6,16 @@ import (
 )
 
 type EnqueueJobInput struct {
-    Type        JobType
-    Payload     json.RawMessage
-    MaxRetries  int
-    ScheduledAt *time.Time
+    Type            JobType
+    Payload         json.RawMessage
+    MaxRetries      int
+    IdempotencyKey  *string
+    ScheduledAt     *time.Time
 }
 
 type EnqueueJobOutput struct {
     Job *Job
+    Replayed bool
 }
 
 type JobFilter struct {

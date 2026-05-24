@@ -27,37 +27,60 @@ func NewJobUseCase(
 }
 
 func (uc *JobUseCase) Enqueue(ctx context.Context, input entity.EnqueueJobInput) (*entity.EnqueueJobOutput, error) {
-    if input.MaxRetries == 0 {
-        input.MaxRetries = 3
-    }
+	if input.IdempotencyKey != nil && *input.IdempotencyKey != "" {
+		existing, err := uc.jobRepo.GetByIdempotencyKey(ctx, *input.IdempotencyKey)
+		if err == nil {
+			return &entity.EnqueueJobOutput{
+				Job:      existing,
+				Replayed: true,
+			}, nil
+		}
+		if err != apperror.ErrJobNotFound {
+			return nil, fmt.Errorf("checking idempotency key: %w", err)
+		}
+	}
 
-    job := &entity.Job{
-        ID:          uuid.New(),
-        Type:        input.Type,
-        Payload:     input.Payload,
-        Status:      entity.JobStatusPending,
-        RetryCount:  0,
-        MaxRetries:  input.MaxRetries,
-        ScheduledAt: input.ScheduledAt,
-    }
+	if input.MaxRetries == 0 {
+		input.MaxRetries = 3
+	}
 
-    if err := uc.jobRepo.Create(ctx, job); err != nil {
-        return nil, fmt.Errorf("saving job: %w", err)
-    }
+	job := &entity.Job{
+		ID:             uuid.New(),
+		Type:           input.Type,
+		Payload:        input.Payload,
+		Status:         entity.JobStatusPending,
+		RetryCount:     0,
+		MaxRetries:     input.MaxRetries,
+		IdempotencyKey: input.IdempotencyKey,
+		ScheduledAt:    input.ScheduledAt,
+	}
 
-    err := uc.queueClient.Enqueue(jobTypeToTaskType(job.Type), map[string]any{
-        "job_id":  job.ID.String(),
-        "payload": job.Payload,
-    }, queue.EnqueueOptions{
-        MaxRetry:    job.MaxRetries,
-        ScheduledAt: job.ScheduledAt,
-        TaskID:      job.ID.String(),
-    })
-    if err != nil {
-        return nil, fmt.Errorf("pushing to queue: %w", err)
-    }
+	if err := uc.jobRepo.Create(ctx, job); err != nil {
+		if err == apperror.ErrDuplicateIdempotencyKey && input.IdempotencyKey != nil {
+			existing, fetchErr := uc.jobRepo.GetByIdempotencyKey(ctx, *input.IdempotencyKey)
+			if fetchErr == nil {
+				return &entity.EnqueueJobOutput{
+					Job:      existing,
+					Replayed: true,
+				}, nil
+			}
+		}
+		return nil, fmt.Errorf("saving job: %w", err)
+	}
 
-    return &entity.EnqueueJobOutput{Job: job}, nil
+	err := uc.queueClient.Enqueue(jobTypeToTaskType(job.Type), map[string]any{
+		"job_id":  job.ID.String(),
+		"payload": job.Payload,
+	}, queue.EnqueueOptions{
+		MaxRetry:    job.MaxRetries,
+		ScheduledAt: job.ScheduledAt,
+		TaskID:      job.ID.String(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("pushing to queue: %w", err)
+	}
+
+	return &entity.EnqueueJobOutput{Job: job, Replayed: false}, nil
 }
 
 func (uc *JobUseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Job, error) {

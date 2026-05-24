@@ -22,8 +22,6 @@ func NewJobHandler(jobUC contracts.JobUseCase) *JobHandler {
     return &JobHandler{jobUC: jobUC}
 }
 
-// ── request / response types ───────────────────────────
-
 type enqueueRequest struct {
     Type        entity.JobType  `json:"type"         binding:"required"`
     Payload     json.RawMessage `json:"payload"      binding:"required"`
@@ -49,42 +47,53 @@ type listResponse struct {
     PageSize int           `json:"page_size"`
 }
 
-// ── handlers ───────────────────────────────────────────
-
 func (h *JobHandler) Enqueue(c *gin.Context) {
-    var req enqueueRequest
-    if err := c.ShouldBindJSON(&req); err != nil {
-        response.BadRequest(c, err.Error())
-        return
-    }
+	var req enqueueRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 
-    if !isValidJobType(req.Type) {
-        response.BadRequest(c, "invalid job type: must be email, sms, webhook, or report")
-        return
-    }
+	if !isValidJobType(req.Type) {
+		response.BadRequest(c, "invalid job type: must be email, sms, webhook, or report")
+		return
+	}
 
-    input := entity.EnqueueJobInput{
-        Type:       req.Type,
-        Payload:    req.Payload,
-        MaxRetries: req.MaxRetries,
-    }
+	input := entity.EnqueueJobInput{
+		Type:       req.Type,
+		Payload:    req.Payload,
+		MaxRetries: req.MaxRetries,
+	}
 
-    if req.ScheduledAt != nil {
-        t, err := time.Parse(time.RFC3339, *req.ScheduledAt)
-        if err != nil {
-            response.BadRequest(c, "invalid scheduled_at: use RFC3339 format")
-            return
-        }
-        input.ScheduledAt = &t
-    }
+	// read idempotency key from header
+	if key := c.GetHeader("X-Idempotency-Key"); key != "" {
+		input.IdempotencyKey = &key
+	}
 
-    out, err := h.jobUC.Enqueue(c.Request.Context(), input)
-    if err != nil {
-        response.InternalError(c, "failed to enqueue job")
-        return
-    }
+	if req.ScheduledAt != nil {
+		t, err := time.Parse(time.RFC3339, *req.ScheduledAt)
+		if err != nil {
+			response.BadRequest(c, "invalid scheduled_at: use RFC3339 format")
+			return
+		}
+		input.ScheduledAt = &t
+	}
 
-    response.Created(c, toJobResponse(out.Job))
+	out, err := h.jobUC.Enqueue(c.Request.Context(), input)
+	if err != nil {
+		response.InternalError(c, "failed to enqueue job")
+		return
+	}
+
+	// replay — job already existed, return 200 not 201
+	if out.Replayed {
+		c.Header("X-Idempotent-Replayed", "true")
+		response.OK(c, toJobResponse(out.Job))
+		return
+	}
+
+	// fresh job — return 201 Created
+	response.Created(c, toJobResponse(out.Job))
 }
 
 func (h *JobHandler) GetByID(c *gin.Context) {

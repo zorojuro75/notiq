@@ -11,6 +11,7 @@ import (
 	"github.com/zorojuro75/notiq/internal/usecase/job"
 	"github.com/zorojuro75/notiq/internal/usecase/webhook"
 	"github.com/zorojuro75/notiq/pkg/queue"
+	"github.com/zorojuro75/notiq/internal/usecase/admin"
 )
 
 func main() {
@@ -56,14 +57,16 @@ func main() {
 	// use cases
 	jobUC := job.NewJobUseCase(jobRepo, queueClient, inspector)
 	webhookUC := webhook.NewWebhookUseCase(webhookRepo)
+	adminUC := admin.NewAdminUseCase(jobRepo, queueClient, inspector)
 
 	// handlers
 	healthHandler := handler.NewHealthHandler(db, redisClient)
 	jobHandler := handler.NewJobHandler(jobUC)
 	webhookHandler := handler.NewWebhookHandler(webhookUC)
+	adminHandler   := handler.NewAdminHandler(adminUC)
 
 	// router
-	router := httpdelivery.NewRouter(healthHandler, jobHandler, webhookHandler)
+	router := httpdelivery.NewRouter(healthHandler, jobHandler, webhookHandler, adminHandler, cfg.Admin.Username, cfg.Admin.Password)
 
 	addr := fmt.Sprintf(":%s", cfg.App.Port)
 	log.Printf("server starting on %s", addr)

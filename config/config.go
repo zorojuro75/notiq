@@ -9,10 +9,11 @@ import (
 )
 
 type Config struct {
-    App   AppConfig
-    DB    DBConfig
-    Redis RedisConfig
-    Worker WorkerConfig
+    App     AppConfig
+    DB      DBConfig
+    Redis   RedisConfig
+    Worker  WorkerConfig
+    Admin   AdminConfig
 }
 
 type AppConfig struct {
@@ -37,6 +38,11 @@ type RedisConfig struct {
 
 type WorkerConfig struct {
     ShutdownTimeout time.Duration
+}
+
+type AdminConfig struct {
+	Username string
+	Password string
 }
 
 func Load() (*Config, error) {
@@ -67,6 +73,10 @@ func Load() (*Config, error) {
         },
         Worker: WorkerConfig{
             ShutdownTimeout: viper.GetDuration("WORKER_SHUTDOWN_TIMEOUT"),
+        },
+        Admin: AdminConfig{
+            Username: viper.GetString("ADMIN_USERNAME"),
+            Password: viper.GetString("ADMIN_PASSWORD"),
         },
     }, nil
 }

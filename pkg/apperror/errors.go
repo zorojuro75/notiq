@@ -9,4 +9,5 @@ var (
 	ErrWebhookNotFound         = errors.New("webhook not found")
 	ErrWebhookUnauthorized     = errors.New("webhook not found")
 	ErrDuplicateIdempotencyKey = errors.New("duplicate idempotency key")
+	ErrJobNotRetryable         = errors.New("only dead jobs can be manually retried") 
 )

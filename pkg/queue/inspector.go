@@ -41,3 +41,12 @@ func (i *Inspector) DeleteTask(queueName, taskID string) error {
 func (i *Inspector) Close() error {
 	return i.inspector.Close()
 }
+
+// GetQueueInfo returns real-time stats for a named queue from Redis.
+func (i *Inspector) GetQueueInfo(queueName string) (*asynq.QueueInfo, error) {
+	info, err := i.inspector.GetQueueInfo(queueName)
+	if err != nil {
+		return nil, fmt.Errorf("getting queue info for %s: %w", queueName, err)
+	}
+	return info, nil
+}

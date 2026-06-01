@@ -2,7 +2,7 @@ package worker
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -12,11 +12,11 @@ import (
 )
 
 type Processor struct {
-	server       *asynq.Server
-	mux          *asynq.ServeMux
-	pool         *Pool
-	emailHandler *handlers.EmailHandler
-	smsHandler   *handlers.SMSHandler
+	server         *asynq.Server
+	mux            *asynq.ServeMux
+	pool           *Pool
+	emailHandler   *handlers.EmailHandler
+	smsHandler     *handlers.SMSHandler
 	webhookHandler *handlers.WebhookHandler
 	reportHandler  *handlers.ReportHandler
 }
@@ -41,13 +41,20 @@ func NewProcessor(
 
 			RetryDelayFunc: func(attempt int, err error, task *asynq.Task) time.Duration {
 				delay := retry.Backoff(attempt)
-				log.Printf("[RETRY] task=%s attempt=%d next_in=%v err=%v",
-					task.Type(), attempt, delay, err)
+				slog.Warn("retry scheduled",
+					"task_type", task.Type(),
+					"attempt", attempt,
+					"next_in", delay.String(),
+					"error", err.Error(),
+				)
 				return delay
 			},
-			
+
 			ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
-				log.Printf("[ASYNQ ERROR] task=%s err=%v", task.Type(), err)
+				slog.Error("task error",
+					"task_type", task.Type(),
+					"error", err.Error(),
+				)
 			}),
 		},
 	)
@@ -91,11 +98,11 @@ func (p *Processor) wrap(h handlers.JobHandler) asynq.HandlerFunc {
 }
 
 func (p *Processor) Start() error {
-	log.Println("processor starting — listening for tasks")
+	slog.Info("processor starting — listening for tasks")
 	return p.server.Start(p.mux)
 }
 
 func (p *Processor) Shutdown() {
-	log.Println("processor shutting down")
+	slog.Info("processor shutting down")
 	p.server.Shutdown()
 }

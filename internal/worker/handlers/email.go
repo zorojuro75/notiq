@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"github.com/hibiken/asynq"
 	"github.com/zorojuro75/notiq/internal/domain/repository"
 	"github.com/zorojuro75/notiq/pkg/apperror"
+	"github.com/zorojuro75/notiq/pkg/logger"
 )
 
 type emailPayload struct {
@@ -31,24 +31,27 @@ func (h *EmailHandler) Handle(ctx context.Context, task *asynq.Task) error {
 	job, err := h.Prepare(ctx, task)
 	if err != nil {
 		if err == apperror.ErrJobCancelled {
-			log.Printf("job was cancelled, skipping task type: %s", task.Type())
 			return nil
 		}
 		return fmt.Errorf("preparing job: %w", err)
 	}
-	
+
+	// inject job ID into context for all subsequent logs
+	ctx = logger.WithJobID(ctx, job.ID.String())
+	log := logger.FromContext(ctx)
+
 	var p emailPayload
 	if err := json.Unmarshal(job.Payload, &p); err != nil {
 		_ = h.FailOrDead(ctx, job)
 		return fmt.Errorf("decoding email payload: %w", err)
 	}
 
-	log.Printf("[EMAIL] to=%s subject=%s body=%s", p.To, p.Subject, p.Body)
+	log.Info("sending email", "to", p.To, "subject", p.Subject)
 
 	if err := h.Complete(ctx, job.ID); err != nil {
 		return fmt.Errorf("completing job: %w", err)
 	}
 
-	log.Printf("[EMAIL] job %s done", job.ID)
+	log.Info("email job done")
 	return nil
 }

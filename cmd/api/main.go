@@ -3,15 +3,18 @@ package main
 import (
 	"fmt"
 	"log"
+	"log/slog"
+	"os"
 
 	"github.com/zorojuro75/notiq/config"
 	httpdelivery "github.com/zorojuro75/notiq/internal/delivery/http"
 	"github.com/zorojuro75/notiq/internal/delivery/http/handler"
 	"github.com/zorojuro75/notiq/internal/repository/postgres"
+	"github.com/zorojuro75/notiq/internal/usecase/admin"
 	"github.com/zorojuro75/notiq/internal/usecase/job"
 	"github.com/zorojuro75/notiq/internal/usecase/webhook"
+	"github.com/zorojuro75/notiq/pkg/logger"
 	"github.com/zorojuro75/notiq/pkg/queue"
-	"github.com/zorojuro75/notiq/internal/usecase/admin"
 )
 
 func main() {
@@ -19,19 +22,25 @@ func main() {
 	if err != nil {
 		log.Fatalf("loading config: %v", err)
 	}
+	logger.Init(cfg.Log.Level, cfg.Log.Format)
+
+	slog.Info("starting notiq API")
 
 	db, err := config.NewPostgres(&cfg.DB)
 	if err != nil {
-		log.Fatalf("connecting to postgres: %v", err)
+		slog.Error("connecting to postgres", "error", err)
+		os.Exit(1)
 	}
 
 	if err := config.RunMigrations(db); err != nil {
-		log.Fatalf("running migrations: %v", err)
+		slog.Error("running migrations", "error", err)
+		os.Exit(1)
 	}
 
 	redisClient, err := config.NewRedis(&cfg.Redis)
 	if err != nil {
-		log.Fatalf("connecting to redis: %v", err)
+		slog.Error("connecting to redis", "error", err)
+		os.Exit(1)
 	}
 
 	// repositories
@@ -69,9 +78,10 @@ func main() {
 	router := httpdelivery.NewRouter(healthHandler, jobHandler, webhookHandler, adminHandler, cfg.Admin.Username, cfg.Admin.Password)
 
 	addr := fmt.Sprintf(":%s", cfg.App.Port)
-	log.Printf("server starting on %s", addr)
+	slog.Info("server starting", "addr", addr)
 
 	if err := router.Run(addr); err != nil {
-		log.Fatalf("server error: %v", err)
+		slog.Error("server error", "error", err)
+		os.Exit(1)
 	}
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"os/signal"
 	"syscall"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/zorojuro75/notiq/internal/repository/postgres"
 	"github.com/zorojuro75/notiq/internal/worker"
 	"github.com/zorojuro75/notiq/internal/worker/handlers"
+	"github.com/zorojuro75/notiq/pkg/logger"
 )
 
 func main() {
@@ -19,14 +21,20 @@ func main() {
 		log.Fatalf("loading config: %v", err)
 	}
 
+	logger.Init(cfg.Log.Level, cfg.Log.Format)
+
+	slog.Info("starting notiq worker")
+
 	db, err := config.NewPostgres(&cfg.DB)
 	if err != nil {
-		log.Fatalf("connecting to postgres: %v", err)
+		slog.Error("connecting to postgres", "error", err)
+		return
 	}
 
 	_, err = config.NewRedis(&cfg.Redis)
 	if err != nil {
-		log.Fatalf("connecting to redis: %v", err)
+		slog.Error("connecting to redis", "error", err)
+		return
 	}
 
 	// repositories
@@ -55,48 +63,49 @@ func main() {
 	)
 
 	if err := processor.Start(); err != nil {
-		log.Fatalf("starting processor: %v", err)
+		slog.Error("starting processor", "error", err)
+		return
 	}
 
-	// signal.NotifyContext gives us a context that cancels on SIGTERM/SIGINT
-	// gets the shutdown signal automatically
+	// signal.NotifyContext cancels ctx when SIGTERM/SIGINT arrives
+	// it does not expose which signal fired — use the simpler pattern
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
 	// block here until signal arrives
 	<-ctx.Done()
 
-	log.Printf("shutdown signal received — starting graceful shutdown")
+	// ctx.Err() tells us why the context was cancelled
+	slog.Info("shutdown signal received", "reason", ctx.Err().Error())
 
 	shutdownTimeout := cfg.Worker.ShutdownTimeout
 	if shutdownTimeout == 0 {
-		shutdownTimeout = 30 * time.Second // safe default
+		shutdownTimeout = 30 * time.Second
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
-	// run the shutdown sequence in a goroutine so we can race it against the timeout
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 
-		// no new tasks enter the system after this
-		log.Println("step 1/2 — stopping processor")
+		slog.Info("step 1/2 — stopping processor")
 		processor.Shutdown()
-		log.Println("step 1/2 — processor stopped")
+		slog.Info("step 1/2 — processor stopped")
 
-		// blocks until every in-flight job finishes
-		log.Println("step 2/2 — draining worker pool")
+		slog.Info("step 2/2 — draining worker pool")
 		pool.Shutdown()
-		log.Println("step 2/2 — pool drained")
+		slog.Info("step 2/2 — pool drained")
 	}()
 
 	select {
 	case <-done:
-		log.Println("graceful shutdown complete")
+		slog.Info("graceful shutdown complete")
 	case <-shutdownCtx.Done():
-		log.Printf("shutdown timeout after %s — forcing exit (some jobs may still be processing)", shutdownTimeout)
-		log.Println("asynq reaper will re-queue stuck jobs on next startup")
+		slog.Warn("shutdown timeout — forcing exit",
+			"timeout", shutdownTimeout.String(),
+			"note", "asynq reaper will re-queue stuck jobs on next startup",
+		)
 	}
 }

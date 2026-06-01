@@ -16,6 +16,12 @@ func NewRouter(
 ) *gin.Engine {
     r := gin.Default()
 
+    r.Use(middleware.RequestID())
+
+    r.Use(middleware.Logger())
+
+    r.Use(gin.Recovery())
+
     r.GET("/healthz", healthHandler.Check)
 
     v1 := r.Group("/api/v1")

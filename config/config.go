@@ -14,6 +14,7 @@ type Config struct {
     Redis   RedisConfig
     Worker  WorkerConfig
     Admin   AdminConfig
+    Log     LogConfig
 }
 
 type AppConfig struct {
@@ -43,6 +44,11 @@ type WorkerConfig struct {
 type AdminConfig struct {
 	Username string
 	Password string
+}
+
+type LogConfig struct{
+    Level   string
+    Format  string
 }
 
 func Load() (*Config, error) {
@@ -77,6 +83,10 @@ func Load() (*Config, error) {
         Admin: AdminConfig{
             Username: viper.GetString("ADMIN_USERNAME"),
             Password: viper.GetString("ADMIN_PASSWORD"),
+        },
+        Log: LogConfig{
+            Level:  viper.GetString("LOG_LEVEL"),
+            Format: viper.GetString("LOG_FORMAT"),
         },
     }, nil
 }

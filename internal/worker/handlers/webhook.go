@@ -35,7 +35,7 @@ func NewWebhookHandler(jobRepo repository.JobRepository) *WebhookHandler {
 }
 
 func (h *WebhookHandler) Handle(ctx context.Context, task *asynq.Task) error {
-	job, err := h.Prepare(ctx, task)
+	job, ctx, err := h.Prepare(ctx, task)
 	if err != nil {
 		if err == apperror.ErrJobCancelled {
 			log.Printf("job was cancelled, skipping task type: %s", task.Type())
@@ -75,7 +75,7 @@ func (h *WebhookHandler) Handle(ctx context.Context, task *asynq.Task) error {
 		return fmt.Errorf("webhook returned %d", resp.StatusCode)
 	}
 
-	if err := h.Complete(ctx, job.ID); err != nil {
+	if err := h.Complete(ctx, job); err != nil {
 		return fmt.Errorf("completing job: %w", err)
 	}
 

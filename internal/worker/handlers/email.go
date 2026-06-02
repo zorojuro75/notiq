@@ -28,7 +28,7 @@ func NewEmailHandler(jobRepo repository.JobRepository) *EmailHandler {
 }
 
 func (h *EmailHandler) Handle(ctx context.Context, task *asynq.Task) error {
-	job, err := h.Prepare(ctx, task)
+	job, ctx, err := h.Prepare(ctx, task)
 	if err != nil {
 		if err == apperror.ErrJobCancelled {
 			return nil
@@ -48,7 +48,7 @@ func (h *EmailHandler) Handle(ctx context.Context, task *asynq.Task) error {
 
 	log.Info("sending email", "to", p.To, "subject", p.Subject)
 
-	if err := h.Complete(ctx, job.ID); err != nil {
+	if err := h.Complete(ctx, job); err != nil {
 		return fmt.Errorf("completing job: %w", err)
 	}
 

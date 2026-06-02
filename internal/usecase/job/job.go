@@ -10,6 +10,7 @@ import (
 	"github.com/zorojuro75/notiq/internal/domain/entity"
 	"github.com/zorojuro75/notiq/internal/domain/repository"
 	"github.com/zorojuro75/notiq/pkg/apperror"
+	"github.com/zorojuro75/notiq/pkg/metrics"
 	"github.com/zorojuro75/notiq/pkg/queue"
 )
 
@@ -85,6 +86,7 @@ func (uc *JobUseCase) Enqueue(ctx context.Context, input entity.EnqueueJobInput)
 		return nil, fmt.Errorf("pushing to queue: %w", err)
 	}
 
+	metrics.RecordJobEnqueued(string(job.Type))
 	return &entity.EnqueueJobOutput{Job: job, Replayed: false}, nil
 }
 

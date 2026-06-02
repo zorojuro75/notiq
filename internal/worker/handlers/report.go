@@ -19,7 +19,7 @@ func NewReportHandler(jobRepo repository.JobRepository) *ReportHandler {
 }
 
 func (h *ReportHandler) Handle(ctx context.Context, task *asynq.Task) error {
-	job, err := h.Prepare(ctx, task)
+	job, ctx, err := h.Prepare(ctx, task)
 	if err != nil {
 		if err == apperror.ErrJobCancelled {
 			return nil
@@ -27,5 +27,5 @@ func (h *ReportHandler) Handle(ctx context.Context, task *asynq.Task) error {
 		return err
 	}
 	log.Printf("[REPORT] job %s — payload: %s", job.ID, job.Payload)
-	return h.Complete(ctx, job.ID)
+	return h.Complete(ctx, job)
 }

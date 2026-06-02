@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/zorojuro75/notiq/internal/delivery/http/handler"
 	"github.com/zorojuro75/notiq/internal/delivery/http/middleware"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func NewRouter(
@@ -20,7 +21,11 @@ func NewRouter(
 
     r.Use(middleware.Logger())
 
+    r.Use(middleware.Metrics())
+
     r.Use(gin.Recovery())
+
+    r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
     r.GET("/healthz", healthHandler.Check)
 

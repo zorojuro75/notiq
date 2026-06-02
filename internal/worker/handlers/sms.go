@@ -19,7 +19,7 @@ func NewSMSHandler(jobRepo repository.JobRepository) *SMSHandler {
 }
 
 func (h *SMSHandler) Handle(ctx context.Context, task *asynq.Task) error {
-	job, err := h.Prepare(ctx, task)
+	job, ctx, err := h.Prepare(ctx, task)
 	if err != nil {
 		if err == apperror.ErrJobCancelled {
 			return nil
@@ -27,5 +27,5 @@ func (h *SMSHandler) Handle(ctx context.Context, task *asynq.Task) error {
 		return err
 	}
 	log.Printf("[SMS] job %s — payload: %s", job.ID, job.Payload)
-	return h.Complete(ctx, job.ID)
+	return h.Complete(ctx, job)
 }

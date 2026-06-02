@@ -3,7 +3,10 @@ package worker
 import (
 	"context"
 	"log"
+	"log/slog"
 	"sync"
+
+	"github.com/zorojuro75/notiq/pkg/metrics"
 )
 
 type Job func()
@@ -38,8 +41,9 @@ func (p *Pool) Start() {
 func (p *Pool) Submit(job Job) {
 	select {
 	case p.jobCh <- job:
+		metrics.WorkerPoolQueued.Inc()
 	case <-p.ctx.Done():
-		log.Println("pool shutting down, job dropped")
+		slog.Warn("pool shutting down — job dropped")
 	}
 }
 
@@ -62,7 +66,9 @@ func (p *Pool) runWorker() {
 			if !ok {
 				return
 			}
+			metrics.WorkerPoolActive.Inc()
 			p.executeJob(job)
+			metrics.WorkerPoolActive.Dec()
 
 		case <-p.ctx.Done():
 			for {
@@ -71,7 +77,9 @@ func (p *Pool) runWorker() {
 					if !ok {
 						return
 					}
+					metrics.WorkerPoolActive.Inc()
 					p.executeJob(job)
+					metrics.WorkerPoolActive.Dec()
 				default:
 					return
 				}
@@ -81,9 +89,10 @@ func (p *Pool) runWorker() {
 }
 
 func (p *Pool) executeJob(job Job) {
+	metrics.WorkerPoolQueued.Dec()
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("worker recovered from panic: %v", r)
+			slog.Error("worker recovered from panic", "error", r)
 		}
 	}()
 	job()

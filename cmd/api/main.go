@@ -1,10 +1,16 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/zorojuro75/notiq/config"
 	httpdelivery "github.com/zorojuro75/notiq/internal/delivery/http"
@@ -85,10 +91,41 @@ func main() {
 	router := httpdelivery.NewRouter(healthHandler, jobHandler, webhookHandler, adminHandler, cfg.Admin.Username, cfg.Admin.Password)
 
 	addr := fmt.Sprintf(":%s", cfg.App.Port)
-	slog.Info("server starting", "addr", addr)
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: router,
+	}
 
-	if err := router.Run(addr); err != nil {
+	// Run the server in the background so main can block on the shutdown signal.
+	serverErr := make(chan error, 1)
+	go func() {
+		slog.Info("server starting", "addr", addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+		}
+	}()
+
+	// signal.NotifyContext cancels ctx when SIGTERM/SIGINT arrives.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
+	select {
+	case err := <-serverErr:
 		slog.Error("server error", "error", err)
 		os.Exit(1)
+	case <-ctx.Done():
+		slog.Info("shutdown signal received — draining in-flight requests")
 	}
+
+	// Give in-flight requests a bounded window to finish before forcing exit.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("graceful shutdown failed — forcing close", "error", err)
+		_ = srv.Close()
+		os.Exit(1)
+	}
+
+	slog.Info("graceful shutdown complete")
 }

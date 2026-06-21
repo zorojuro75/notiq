@@ -88,3 +88,42 @@
 ### Suggested order
 
 Tackle **#1–#4** first (high-severity) in one branch, then medium, then polish.
+
+---
+
+## 🚀 Upgrades (post-audit improvements)
+
+> Identified 2026-06-21 after the 12 audit fixes landed. These are enhancements,
+> not bug fixes. Ordered by value/risk.
+
+- [x] **U1. API graceful shutdown** — DONE 2026-06-21
+  `cmd/api/main.go` calls `router.Run(addr)` (blocking, no signal handling), so a
+  deploy/restart cuts off in-flight HTTP requests. The worker already drains
+  cleanly on SIGTERM — bring the API to parity by wrapping Gin in an
+  `http.Server` and calling `srv.Shutdown(ctx)` on SIGTERM/SIGINT.
+
+- [x] **U2. `go.mod` hygiene + dependency refresh** — DONE 2026-06-21
+  Every entry in the `require` block is marked `// indirect`, even direct
+  dependencies (gin, gorm, asynq, pgx). Run `go mod tidy` to reclassify, then
+  refresh the available minor/patch bumps (pgx 5.9.2→5.10.0, go-redis
+  9.19→9.20.1, validator 10.30.1→10.30.3, testcontainers 0.42→0.43, etc.).
+
+- [ ] **U3. Unit tests for the recent fixes**
+  Only 4 test files exist (retry, safehttp, Postgres integration). No unit tests
+  for the use cases/handlers — including the just-fixed behavior: enqueue
+  rollback on queue failure, idempotency replay, negative max_retries clamp,
+  constant-time admin auth, queue.TaskTypeForJob. Add fast tests with a mock
+  JobRepository.
+
+- [ ] **U4. CI / linting / vuln scanning**
+  No GitHub Actions, no golangci-lint config, no govulncheck. Add a ci.yml
+  running `go vet`, `go test`, `golangci-lint`, and `govulncheck`.
+
+- [ ] **U5. Architectural (larger, optional)**
+  - Enqueue durability: replace the best-effort create→enqueue→compensating-delete
+    with a transactional outbox so a crash mid-enqueue can't lose/orphan work.
+  - Retry bookkeeping: the handler's DB `retry_count` is tracked separately from
+    asynq's own retry counter — they can drift. Unify them.
+  - Schema migrations: GORM AutoMigrate works now; a real tool (goose/atlas) is
+    the production-grade step.
+  - Webhook secret stored in plaintext at rest — consider encrypting.

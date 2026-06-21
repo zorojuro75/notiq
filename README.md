@@ -7,10 +7,11 @@ A background job queue and notification engine built in Go. Enqueue jobs via RES
 ## What it does
 
 - Accepts jobs via REST API — email, SMS, webhook, report
-- Processes jobs in the background with a concurrent goroutine pool
+- Processes jobs concurrently in the background (asynq-managed worker concurrency)
 - Retries failed jobs with exponential backoff and jitter
 - Tracks every job through its full lifecycle — pending → processing → done / failed / dead
-- Signs webhook deliveries with HMAC-SHA256
+- Delivers signed job lifecycle events to registered webhooks (HMAC-SHA256), each retried independently
+- Guards all outbound webhook calls against SSRF (loopback / private / link-local targets blocked)
 - Prevents duplicate jobs with idempotency keys
 - Supports delayed and scheduled job execution
 - Exposes Prometheus metrics at `/metrics` with a Grafana dashboard
@@ -24,11 +25,13 @@ POST /api/v1/jobs
        ↓
 Gin HTTP API → Postgres (job record) + Redis (asynq task)
                                             ↓
-                              Worker pool (10 goroutines)
+                          asynq worker (concurrency 10)
                                             ↓
                               Job handler (email / sms / webhook / report)
                                             ↓
                               Postgres status update (done / failed / dead)
+                                            ↓
+                       signed webhook event → owner's registered URLs
 ```
 
 **Stack:** Go 1.25 · Gin · GORM · PostgreSQL · Redis · asynq · Prometheus · Grafana · Docker
@@ -59,16 +62,16 @@ internal/
     models/       GORM models
     postgres/     GORM implementations + integration tests
   worker/
-    pool.go       Goroutine pool — bounded concurrency, graceful shutdown
-    processor.go  asynq → pool bridge
-    handlers/     Email, SMS, webhook, report handlers
+    processor.go  asynq server — registers handlers, bounds concurrency, graceful drain
+    handlers/     Email, SMS, webhook, report + webhook-delivery handlers
 pkg/
   apperror/       Sentinel errors
   logger/         Structured logging (slog) + context propagation
   metrics/        Prometheus counters, histograms, gauges
-  queue/          asynq client + inspector wrapper
+  queue/          asynq client + inspector wrapper, task-type mapping
   response/       HTTP response helpers
   retry/          Exponential backoff with jitter
+  safehttp/       SSRF-hardened HTTP client for outbound webhooks
   signature/      HMAC-SHA256 signing and verification
 ```
 
@@ -132,6 +135,9 @@ go run ./cmd/worker
 | GET | `/api/v1/jobs` | List jobs |
 | GET | `/api/v1/jobs/:id` | Get job by ID |
 | DELETE | `/api/v1/jobs/:id` | Cancel a pending job |
+
+> `max_retries` must be between `0` and `100` (defaults to `3`). Set an optional
+> `user_id` (UUID) to have terminal job events delivered to that user's webhooks.
 
 ### Webhooks
 
@@ -471,7 +477,14 @@ Retry delays use exponential backoff with jitter:
 
 ## Webhook signing
 
-Every webhook delivery includes an HMAC-SHA256 signature header:
+When a job reaches a terminal state (`done` or `dead`), notiq delivers a signed
+event to every webhook its owner has registered (set `user_id` on the job and
+register URLs via `POST /api/v1/webhooks`). Each delivery is enqueued as its own
+asynq task with independent exponential-backoff retries, so a slow or failing
+subscriber never blocks job processing. Outbound calls go through the
+SSRF-hardened client.
+
+Every delivery includes an HMAC-SHA256 signature header:
 
 ```code
 X-Notiq-Signature: sha256=a1b2c3d4...
@@ -508,7 +521,6 @@ if !valid {
 | `notiq_jobs_enqueued_total` | Counter | Jobs enqueued by type |
 | `notiq_jobs_processed_total` | Counter | Jobs processed by type and status |
 | `notiq_job_processing_duration_seconds` | Histogram | Processing time by type |
-| `notiq_worker_pool_active_goroutines` | Gauge | Active workers right now |
 | `notiq_http_requests_total` | Counter | HTTP requests by method, path, status |
 | `notiq_http_request_duration_seconds` | Histogram | HTTP latency by method and path |
 
@@ -529,7 +541,7 @@ go test ./... -v
 go test ./internal/repository/postgres/... -v -run TestIntegration
 
 # with race detector
-go test ./internal/worker/... -v -race
+go test ./pkg/... -v -race
 ```
 
 Integration tests use `testcontainers-go` — each test spins up its own isolated Postgres and Redis container and destroys it after. No shared state, no manual setup.
@@ -548,30 +560,34 @@ Copy `.env.example` to `.env` and fill in values:
 | `DB_USER` | Postgres user | `postgres` |
 | `DB_PASSWORD` | Postgres password | — |
 | `DB_NAME` | Database name | `notiq` |
+| `DB_SSLMODE` | Postgres SSL mode (disable/require/...) | `disable` |
 | `DB_LOG_LEVEL` | GORM log level (silent/warn/info) | `warn` |
 | `REDIS_ADDR` | Redis address | `localhost:6379` |
 | `REDIS_PASSWORD` | Redis password | — |
+| `REDIS_DB` | Redis database number | `0` |
 | `WORKER_SHUTDOWN_TIMEOUT` | Graceful shutdown window | `30s` |
-| `ADMIN_USERNAME` | Admin basic auth username | `admin` |
-| `ADMIN_PASSWORD` | Admin basic auth password | — |
+| `ADMIN_USERNAME` | Admin basic auth username (**required** — API won't start if empty) | `admin` |
+| `ADMIN_PASSWORD` | Admin basic auth password (**required** — API won't start if empty) | — |
 | `LOG_LEVEL` | Log level (debug/info/warn/error) | `info` |
 | `LOG_FORMAT` | Log format (text/json) | `text` |
+| `WEBHOOK_ALLOW_PRIVATE` | Disable the outbound SSRF guard — **dev only**, never in production | `false` |
 
 ---
 
 ## What I learned building this
 
 - Clean architecture in Go — domain, use cases, delivery, and infrastructure with no framework bleed
-- Goroutine pool with bounded concurrency, panic recovery, and graceful drain on SIGTERM
-- Reliable background job processing with asynq and Redis
-- Exponential backoff with jitter to prevent thundering herd
-- Idempotency keys to prevent duplicate job creation under network failure
+- Reliable background job processing with asynq and Redis — bounded concurrency and graceful drain on SIGTERM
+- Exponential backoff with jitter (overflow-safe) to prevent thundering herd
+- Idempotency keys to prevent duplicate job creation under network failure — with rollback so a failed enqueue never orphans a row
 - HMAC-SHA256 webhook signing with constant-time comparison against timing attacks
+- SSRF-hardened outbound HTTP — a dialer Control hook blocks loopback/private/link-local IPs even after DNS resolution
+- Fan-out webhook delivery — each subscriber notification is its own retryable task, so a slow receiver never blocks job processing
 - Structured logging with `slog` — request ID and job ID propagated through `context.Context`
 - Prometheus instrumentation — counters, histograms, gauges with correct label cardinality
 - Integration testing with `testcontainers-go` — real Postgres and Redis, no mocks for persistence
 - Multi-stage Docker builds — ~20MB runtime image from an 800MB builder
-- Graceful shutdown ordering — processor stops first, pool drains second, zero in-flight job loss
+- Graceful shutdown — asynq drains in-flight handlers within the timeout, then re-queues anything still running
 
 ---
 

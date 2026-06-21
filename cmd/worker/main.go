@@ -35,11 +35,12 @@ func main() {
 		return
 	}
 
-	_, err = config.NewRedis(&cfg.Redis)
+	redisClient, err := config.NewRedis(&cfg.Redis)
 	if err != nil {
 		slog.Error("connecting to redis", "error", err)
 		return
 	}
+	defer redisClient.Close()
 
 	// repositories
 	jobRepo := postgres.NewJobRepository(db)

@@ -108,12 +108,11 @@ Tackle **#1–#4** first (high-severity) in one branch, then medium, then polish
   refresh the available minor/patch bumps (pgx 5.9.2→5.10.0, go-redis
   9.19→9.20.1, validator 10.30.1→10.30.3, testcontainers 0.42→0.43, etc.).
 
-- [ ] **U3. Unit tests for the recent fixes**
-  Only 4 test files exist (retry, safehttp, Postgres integration). No unit tests
-  for the use cases/handlers — including the just-fixed behavior: enqueue
-  rollback on queue failure, idempotency replay, negative max_retries clamp,
-  constant-time admin auth, queue.TaskTypeForJob. Add fast tests with a mock
-  JobRepository.
+- [x] **U3. Unit tests for the recent fixes** — DONE 2026-06-21
+  Added: job use case (idempotent replay, enqueue rollback, max_retries clamp),
+  webhook Delete error propagation, queue.TaskTypeForJob mapping, constant-time
+  admin auth. Made JobUseCase depend on small Enqueuer/TaskCanceller interfaces
+  so it's testable without a live Redis.
 
 - [ ] **U4. CI / linting / vuln scanning**
   No GitHub Actions, no golangci-lint config, no govulncheck. Add a ci.yml

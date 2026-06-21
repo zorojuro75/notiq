@@ -14,22 +14,33 @@ import (
 	"github.com/zorojuro75/notiq/pkg/queue"
 )
 
+// Enqueuer enqueues a task onto the job queue. *queue.Client satisfies it.
+type Enqueuer interface {
+	Enqueue(taskType string, payload any, opts queue.EnqueueOptions) error
+}
+
+// TaskCanceller removes a (scheduled) task from the queue by ID.
+// *queue.Inspector satisfies it.
+type TaskCanceller interface {
+	DeleteTask(queueName, taskID string) error
+}
+
 type JobUseCase struct {
-    jobRepo     repository.JobRepository
-    queueClient *queue.Client
-    inspector   *queue.Inspector
+	jobRepo     repository.JobRepository
+	queueClient Enqueuer
+	inspector   TaskCanceller
 }
 
 func NewJobUseCase(
-    jobRepo repository.JobRepository,
-    queueClient *queue.Client,
-    inspector *queue.Inspector,
+	jobRepo repository.JobRepository,
+	queueClient Enqueuer,
+	inspector TaskCanceller,
 ) *JobUseCase {
-    return &JobUseCase{
-        jobRepo:     jobRepo,
-        queueClient: queueClient,
-        inspector:   inspector,
-    }
+	return &JobUseCase{
+		jobRepo:     jobRepo,
+		queueClient: queueClient,
+		inspector:   inspector,
+	}
 }
 
 func (uc *JobUseCase) Enqueue(ctx context.Context, input entity.EnqueueJobInput) (*entity.EnqueueJobOutput, error) {
@@ -103,7 +114,7 @@ func (uc *JobUseCase) Enqueue(ctx context.Context, input entity.EnqueueJobInput)
 }
 
 func (uc *JobUseCase) GetByID(ctx context.Context, id uuid.UUID) (*entity.Job, error) {
-    return uc.jobRepo.GetByID(ctx, id)
+	return uc.jobRepo.GetByID(ctx, id)
 }
 
 func (uc *JobUseCase) List(ctx context.Context, filter entity.JobFilter, page, pageSize int) ([]*entity.Job, int64, error) {

@@ -53,18 +53,19 @@ func main() {
 	// dispatcher — fans terminal job events out to the owner's webhooks
 	dispatcher := notification.NewDispatcher(webhookRepo, queueClient)
 
-	// handlers
-	emailHandler := handlers.NewEmailHandler(jobRepo, dispatcher)
-	smsHandler := handlers.NewSMSHandler(jobRepo, dispatcher)
-	webhookHandler := handlers.NewWebhookHandler(jobRepo, dispatcher)
-	reportHandler := handlers.NewReportHandler(jobRepo, dispatcher)
-
 	// SSRF guard is on by default; WEBHOOK_ALLOW_PRIVATE=true disables it for
-	// local testing against loopback receivers only.
+	// local testing against loopback receivers only. It protects every handler
+	// that dials a user-controlled URL — both webhook jobs and webhook delivery.
 	allowPrivate := strings.EqualFold(os.Getenv("WEBHOOK_ALLOW_PRIVATE"), "true")
 	if allowPrivate {
 		slog.Warn("WEBHOOK_ALLOW_PRIVATE enabled — webhook SSRF guard is OFF (dev only)")
 	}
+
+	// handlers
+	emailHandler := handlers.NewEmailHandler(jobRepo, dispatcher)
+	smsHandler := handlers.NewSMSHandler(jobRepo, dispatcher)
+	webhookHandler := handlers.NewWebhookHandler(jobRepo, dispatcher, allowPrivate)
+	reportHandler := handlers.NewReportHandler(jobRepo, dispatcher)
 	deliveryHandler := handlers.NewWebhookDeliveryHandler(webhookRepo, allowPrivate)
 
 	// processor — asynq bounds concurrency itself; no separate worker pool needed

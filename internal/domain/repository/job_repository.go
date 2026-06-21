@@ -14,4 +14,8 @@ type JobRepository interface {
     List(ctx context.Context, filter entity.JobFilter, page, pageSize int) ([]*entity.Job, int64, error)
     UpdateStatus(ctx context.Context, id uuid.UUID, status entity.JobStatus) error
     UpdateRetryCount(ctx context.Context, id uuid.UUID, retryCount int) error
+    // Delete permanently removes a job row. It is a hard delete so the
+    // idempotency key is freed for a clean retry — a soft delete would leave
+    // the unique index occupied.
+    Delete(ctx context.Context, id uuid.UUID) error
 }

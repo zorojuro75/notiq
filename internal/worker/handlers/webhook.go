@@ -13,6 +13,7 @@ import (
 	"github.com/zorojuro75/notiq/internal/domain/repository"
 	"github.com/zorojuro75/notiq/internal/usecase/notification"
 	"github.com/zorojuro75/notiq/pkg/apperror"
+	"github.com/zorojuro75/notiq/pkg/safehttp"
 )
 
 type webhookPayload struct {
@@ -26,12 +27,13 @@ type WebhookHandler struct {
 	httpClient *http.Client
 }
 
-func NewWebhookHandler(jobRepo repository.JobRepository, dispatcher *notification.Dispatcher) *WebhookHandler {
+// NewWebhookHandler builds the handler for user-submitted webhook jobs. The URL
+// in the payload is user-controlled, so the HTTP client is hardened against SSRF
+// via safehttp. allowPrivateTargets disables that guard for local testing only.
+func NewWebhookHandler(jobRepo repository.JobRepository, dispatcher *notification.Dispatcher, allowPrivateTargets bool) *WebhookHandler {
 	return &WebhookHandler{
 		BaseHandler: NewBaseHandler(jobRepo, dispatcher),
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+		httpClient:  safehttp.NewClient(10*time.Second, allowPrivateTargets),
 	}
 }
 

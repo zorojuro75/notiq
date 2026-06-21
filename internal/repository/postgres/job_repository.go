@@ -137,3 +137,19 @@ func (r *jobRepository) UpdateRetryCount(ctx context.Context, id uuid.UUID, retr
     }
     return nil
 }
+
+// Delete permanently removes a job. Unscoped() forces a hard delete so the
+// idempotency key is released — a soft delete would keep the unique index
+// occupied and block a clean retry under the same key.
+func (r *jobRepository) Delete(ctx context.Context, id uuid.UUID) error {
+    result := r.db.WithContext(ctx).Unscoped().
+        Where("id = ?", id).
+        Delete(&models.Job{})
+    if result.Error != nil {
+        return result.Error
+    }
+    if result.RowsAffected == 0 {
+        return apperror.ErrJobNotFound
+    }
+    return nil
+}

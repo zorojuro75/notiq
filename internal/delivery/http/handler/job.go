@@ -27,7 +27,7 @@ type enqueueRequest struct {
 	Type        entity.JobType  `json:"type"         binding:"required"`
 	UserID      *string         `json:"user_id"      binding:"omitempty,uuid"`
 	Payload     json.RawMessage `json:"payload"      binding:"required"`
-	MaxRetries  int             `json:"max_retries"`
+	MaxRetries  int             `json:"max_retries"  binding:"gte=0,lte=100"`
 	ScheduledAt *string         `json:"scheduled_at"`
 }
 

@@ -8,7 +8,6 @@ import (
 	"github.com/zorojuro75/notiq/internal/domain/entity"
 	"github.com/zorojuro75/notiq/internal/domain/repository"
 	"github.com/zorojuro75/notiq/internal/usecase/notification"
-	"github.com/zorojuro75/notiq/pkg/apperror"
 )
 
 type WebhookUseCase struct {
@@ -47,9 +46,8 @@ func (uc *WebhookUseCase) List(ctx context.Context, userID uuid.UUID) ([]*entity
 }
 
 func (uc *WebhookUseCase) Delete(ctx context.Context, id uuid.UUID, userID uuid.UUID) error {
-	err := uc.webhookRepo.Delete(ctx, id, userID)
-	if err != nil {
-		return apperror.ErrWebhookNotFound
-	}
-	return nil
+	// The repository already returns apperror.ErrWebhookNotFound when no row
+	// matches; propagate errors unchanged so real failures (e.g. DB outage)
+	// aren't masked as a 404.
+	return uc.webhookRepo.Delete(ctx, id, userID)
 }

@@ -46,7 +46,10 @@ func (uc *JobUseCase) Enqueue(ctx context.Context, input entity.EnqueueJobInput)
 		}
 	}
 
-	if input.MaxRetries == 0 {
+	// Defense in depth: the HTTP layer already rejects negatives, but a zero or
+	// negative value reaching here would make asynq.MaxRetry(-1) and mark the
+	// job dead on its first failure. Clamp to the default budget.
+	if input.MaxRetries <= 0 {
 		input.MaxRetries = 3
 	}
 
@@ -84,6 +87,13 @@ func (uc *JobUseCase) Enqueue(ctx context.Context, input entity.EnqueueJobInput)
 		TaskID:      job.ID.String(),
 	})
 	if err != nil {
+		// The job row exists but never reached the queue, so it would sit
+		// "pending" forever and — worse — its idempotency key would make a
+		// retry replay a job that was never processed. Compensate by removing
+		// the row so the caller can retry cleanly.
+		if delErr := uc.jobRepo.Delete(ctx, job.ID); delErr != nil {
+			log.Printf("[ENQUEUE] orphaned job %s: failed to roll back after enqueue error: %v", job.ID, delErr)
+		}
 		return nil, fmt.Errorf("pushing to queue: %w", err)
 	}
 

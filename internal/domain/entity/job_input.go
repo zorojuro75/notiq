@@ -3,10 +3,13 @@ package entity
 import (
     "encoding/json"
     "time"
+
+    "github.com/google/uuid"
 )
 
 type EnqueueJobInput struct {
     Type            JobType
+    UserID          *uuid.UUID
     Payload         json.RawMessage
     MaxRetries      int
     IdempotencyKey  *string

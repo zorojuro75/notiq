@@ -11,6 +11,7 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/zorojuro75/notiq/internal/domain/repository"
+	"github.com/zorojuro75/notiq/internal/usecase/notification"
 	"github.com/zorojuro75/notiq/pkg/apperror"
 )
 
@@ -25,9 +26,9 @@ type WebhookHandler struct {
 	httpClient *http.Client
 }
 
-func NewWebhookHandler(jobRepo repository.JobRepository) *WebhookHandler {
+func NewWebhookHandler(jobRepo repository.JobRepository, dispatcher *notification.Dispatcher) *WebhookHandler {
 	return &WebhookHandler{
-		BaseHandler: NewBaseHandler(jobRepo),
+		BaseHandler: NewBaseHandler(jobRepo, dispatcher),
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},

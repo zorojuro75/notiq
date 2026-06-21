@@ -27,6 +27,19 @@ func TestBackoff_NeverExceedsMaxDelay(t *testing.T) {
 	}
 }
 
+func TestBackoff_HighAttemptStaysCapped(t *testing.T) {
+	// Large attempts must not overflow into a negative or out-of-range delay.
+	for _, attempt := range []int{33, 60, 100, 1000} {
+		d := Backoff(attempt)
+		if d < 0 {
+			t.Errorf("attempt %d produced negative delay %v", attempt, d)
+		}
+		if d > maxDelay {
+			t.Errorf("attempt %d delay %v exceeded maxDelay %v", attempt, d, maxDelay)
+		}
+	}
+}
+
 func TestBackoff_HasJitter(t *testing.T) {
 	results := make(map[time.Duration]bool)
 	for range 10 {

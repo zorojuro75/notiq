@@ -8,17 +8,25 @@ import (
 
 const (
 	baseDelay = 2 * time.Second
-	maxDelay  = 5 * time.Minute 
+	maxDelay  = 5 * time.Minute
 	jitterMax = 1000
 )
 
 func Backoff(attempt int) time.Duration {
-	exp := math.Pow(2, float64(attempt))
-	delay := time.Duration(float64(baseDelay) * exp)
+	if attempt < 0 {
+		attempt = 0
+	}
 
-	jitter := time.Duration(rand.Intn(jitterMax)) * time.Millisecond
+	// Compute base * 2^attempt and the jitter in float64, then clamp BEFORE
+	// converting to a Duration. Converting an out-of-range float to int64
+	// wraps to a negative value, so high attempt counts would otherwise yield
+	// a negative (or absurd) delay. math.Pow overflows to +Inf cleanly here,
+	// and +Inf compares greater than maxDelay, so the cap holds.
+	total := float64(baseDelay)*math.Pow(2, float64(attempt)) +
+		float64(time.Duration(rand.Intn(jitterMax))*time.Millisecond)
 
-	total := min(delay + jitter, maxDelay)
-
-	return total
+	if total >= float64(maxDelay) {
+		return maxDelay
+	}
+	return time.Duration(total)
 }

@@ -12,6 +12,7 @@ import (
 
 type Job struct {
     ID          uuid.UUID       `gorm:"type:uuid;primaryKey"`
+    UserID      *uuid.UUID      `gorm:"type:uuid;index"`
     Type        string          `gorm:"type:varchar(50);not null;index"`
     Payload     json.RawMessage `gorm:"type:jsonb;not null"`
     Status      string          `gorm:"type:varchar(20);not null;index"`
@@ -32,6 +33,7 @@ func (Job) TableName() string {
 func (m *Job) ToEntity() *entity.Job {
 	return &entity.Job{
 		ID:             m.ID,
+		UserID:         m.UserID,
 		Type:           entity.JobType(m.Type),
 		Payload:        m.Payload,
 		Status:         entity.JobStatus(m.Status),
@@ -48,6 +50,7 @@ func (m *Job) ToEntity() *entity.Job {
 func FromJobEntity(e *entity.Job) *Job {
 	return &Job{
 		ID:             e.ID,
+		UserID:         e.UserID,
 		Type:           string(e.Type),
 		Payload:        e.Payload,
 		Status:         string(e.Status),

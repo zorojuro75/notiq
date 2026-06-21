@@ -3,7 +3,6 @@ package admin
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,6 +10,7 @@ import (
 	"github.com/zorojuro75/notiq/internal/domain/entity"
 	"github.com/zorojuro75/notiq/internal/domain/repository"
 	"github.com/zorojuro75/notiq/pkg/apperror"
+	"github.com/zorojuro75/notiq/pkg/logger"
 	"github.com/zorojuro75/notiq/pkg/queue"
 )
 
@@ -49,9 +49,9 @@ func NewAdminUseCase(
 
 func (uc *AdminUseCase) GetStats(ctx context.Context) (*StatsOutput, error) {
 	// get queue info from asynq Inspector
-	info, err := uc.inspector.GetQueueInfo("default")
+	info, err := uc.inspector.GetQueueInfo(queue.DefaultQueue)
 	if err != nil {
-		log.Printf("[ADMIN] failed to get queue info: %v", err)
+		logger.FromContext(ctx).Error("failed to get queue info", "error", err.Error())
 		// don't fail entirely — return what we can from Postgres
 		info = &asynq.QueueInfo{}
 	}
@@ -70,7 +70,9 @@ func (uc *AdminUseCase) GetStats(ctx context.Context) (*StatsOutput, error) {
 			Pending:   info.Pending,
 			Active:    info.Active,
 			Retry:     info.Retry,
-			Dead:      info.Failed,
+			// Archived is asynq's exhausted-retries set (our "dead"); Failed is a
+			// daily failure counter, not the dead backlog.
+			Dead:      info.Archived,
 			Scheduled: info.Scheduled,
 			Completed: info.Completed,
 		},
@@ -101,7 +103,7 @@ func (uc *AdminUseCase) RetryDeadJob(ctx context.Context, id uuid.UUID) (*entity
 
 	// push back into Redis queue
 	err = uc.queueClient.Enqueue(
-		jobTypeToTaskType(job.Type),
+		queue.TaskTypeForJob(job.Type),
 		map[string]any{
 			"job_id":  job.ID.String(),
 			"payload": job.Payload,
@@ -128,21 +130,4 @@ func (uc *AdminUseCase) RetryDeadJob(ctx context.Context, id uuid.UUID) (*entity
 	}
 
 	return updated, nil
-}
-
-// jobTypeToTaskType mirrors the mapping in usecase/job — kept here to
-// avoid importing the job use case package (would create circular deps)
-func jobTypeToTaskType(t entity.JobType) string {
-	switch t {
-	case entity.JobTypeEmail:
-		return "job:email"
-	case entity.JobTypeSMS:
-		return "job:sms"
-	case entity.JobTypeWebhook:
-		return "job:webhook"
-	case entity.JobTypeReport:
-		return "job:report"
-	default:
-		return string(t)
-	}
 }

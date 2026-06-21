@@ -62,23 +62,23 @@
 
 ## 🟢 Low — consistency / polish
 
-- [ ] **9. Inconsistent logging — `log.Printf` vs `slog`**
+- [x] **9. Inconsistent logging — `log.Printf` vs `slog`** — FIXED 2026-06-21
   README advertises structured logging everywhere, but
   `internal/usecase/job/job.go:124`, `internal/usecase/admin/admin.go:53`, and
   handlers `report.go`/`sms.go`/`webhook.go` still use stdlib `log.Printf`
   (no `request_id`/`job_id` context). Migrate to `logger.FromContext(ctx)`.
 
-- [ ] **10. Duplicated `jobTypeToTaskType`**
+- [x] **10. Duplicated `jobTypeToTaskType`** — FIXED 2026-06-21
   Defined in both `internal/usecase/job/job.go:131` and
   `internal/usecase/admin/admin.go:133` (the admin copy hardcodes string literals
   instead of the `queue.Type*` consts). Consolidate into the `queue` package.
 
-- [ ] **11. `GetStats` mislabels asynq `Failed` as `Dead`**
+- [x] **11. `GetStats` mislabels asynq `Failed` as `Dead`** — FIXED 2026-06-21 (was a real bug: now uses `info.Archived`)
   `internal/usecase/admin/admin.go:72` maps `info.Failed` → `QueueStats.Dead`.
   asynq's "failed/archived" set isn't exactly your "dead" semantics; verify the
   label or rename for clarity.
 
-- [ ] **12. Hardcoded queue name `"default"`**
+- [x] **12. Hardcoded queue name `"default"`** — FIXED 2026-06-21 (now `queue.DefaultQueue`)
   `internal/usecase/job/job.go:123` (`DeleteTask`) and
   `internal/usecase/admin/admin.go:51` (`GetQueueInfo`) hardcode `"default"`.
   Make it a shared constant so it can't drift from the producer side.

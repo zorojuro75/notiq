@@ -3,12 +3,12 @@ package handlers
 
 import (
 	"context"
-	"log"
 
 	"github.com/hibiken/asynq"
 	"github.com/zorojuro75/notiq/internal/domain/repository"
 	"github.com/zorojuro75/notiq/internal/usecase/notification"
 	"github.com/zorojuro75/notiq/pkg/apperror"
+	"github.com/zorojuro75/notiq/pkg/logger"
 )
 
 type ReportHandler struct {
@@ -27,6 +27,6 @@ func (h *ReportHandler) Handle(ctx context.Context, task *asynq.Task) error {
 		}
 		return err
 	}
-	log.Printf("[REPORT] job %s — payload: %s", job.ID, job.Payload)
+	logger.FromContext(ctx).Info("processing report job", "payload", string(job.Payload))
 	return h.Complete(ctx, job)
 }

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/zorojuro75/notiq/internal/domain/repository"
 	"github.com/zorojuro75/notiq/internal/usecase/notification"
 	"github.com/zorojuro75/notiq/pkg/apperror"
+	"github.com/zorojuro75/notiq/pkg/logger"
 	"github.com/zorojuro75/notiq/pkg/safehttp"
 )
 
@@ -41,7 +41,7 @@ func (h *WebhookHandler) Handle(ctx context.Context, task *asynq.Task) error {
 	job, ctx, err := h.Prepare(ctx, task)
 	if err != nil {
 		if err == apperror.ErrJobCancelled {
-			log.Printf("job was cancelled, skipping task type: %s", task.Type())
+			logger.FromContext(ctx).Info("job was cancelled — skipping", "task_type", task.Type())
 			return nil
 		}
 		return fmt.Errorf("preparing job: %w", err)
@@ -82,6 +82,6 @@ func (h *WebhookHandler) Handle(ctx context.Context, task *asynq.Task) error {
 		return fmt.Errorf("completing job: %w", err)
 	}
 
-	log.Printf("[WEBHOOK] job %s done — %s responded %d", job.ID, p.URL, resp.StatusCode)
+	logger.FromContext(ctx).Info("webhook job done", "url", p.URL, "status", resp.StatusCode)
 	return nil
 }

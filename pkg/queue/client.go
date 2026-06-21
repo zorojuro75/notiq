@@ -20,6 +20,27 @@ const (
 	TypeWebhookDelivery = "job:webhook-delivery"
 )
 
+// DefaultQueue is the asynq queue name all tasks are enqueued to. Producers and
+// consumers (inspector, task deletion) must agree on this value.
+const DefaultQueue = "default"
+
+// TaskTypeForJob maps a domain job type to its asynq task type. Kept here so the
+// producer (job use case) and admin retry path share one mapping.
+func TaskTypeForJob(t entity.JobType) string {
+	switch t {
+	case entity.JobTypeEmail:
+		return TypeEmail
+	case entity.JobTypeSMS:
+		return TypeSMS
+	case entity.JobTypeWebhook:
+		return TypeWebhook
+	case entity.JobTypeReport:
+		return TypeReport
+	default:
+		return string(t)
+	}
+}
+
 // WebhookDeliveryPayload is the task payload for TypeWebhookDelivery. The
 // secret is never placed on the queue — the delivery handler loads it from the
 // webhook record by ID at send time.

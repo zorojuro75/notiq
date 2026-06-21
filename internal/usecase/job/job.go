@@ -3,13 +3,13 @@ package job
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/zorojuro75/notiq/internal/domain/entity"
 	"github.com/zorojuro75/notiq/internal/domain/repository"
 	"github.com/zorojuro75/notiq/pkg/apperror"
+	"github.com/zorojuro75/notiq/pkg/logger"
 	"github.com/zorojuro75/notiq/pkg/metrics"
 	"github.com/zorojuro75/notiq/pkg/queue"
 )
@@ -78,7 +78,7 @@ func (uc *JobUseCase) Enqueue(ctx context.Context, input entity.EnqueueJobInput)
 		return nil, fmt.Errorf("saving job: %w", err)
 	}
 
-	err := uc.queueClient.Enqueue(jobTypeToTaskType(job.Type), map[string]any{
+	err := uc.queueClient.Enqueue(queue.TaskTypeForJob(job.Type), map[string]any{
 		"job_id":  job.ID.String(),
 		"payload": job.Payload,
 	}, queue.EnqueueOptions{
@@ -92,7 +92,8 @@ func (uc *JobUseCase) Enqueue(ctx context.Context, input entity.EnqueueJobInput)
 		// retry replay a job that was never processed. Compensate by removing
 		// the row so the caller can retry cleanly.
 		if delErr := uc.jobRepo.Delete(ctx, job.ID); delErr != nil {
-			log.Printf("[ENQUEUE] orphaned job %s: failed to roll back after enqueue error: %v", job.ID, delErr)
+			logger.FromContext(ctx).Error("failed to roll back orphaned job after enqueue error",
+				"job_id", job.ID.String(), "error", delErr.Error())
 		}
 		return nil, fmt.Errorf("pushing to queue: %w", err)
 	}
@@ -130,25 +131,11 @@ func (uc *JobUseCase) Cancel(ctx context.Context, id uuid.UUID) error {
 	}
 
 	if job.ScheduledAt != nil && job.ScheduledAt.After(time.Now().UTC()) {
-		if err := uc.inspector.DeleteTask("default", id.String()); err != nil {
-			log.Printf("[CANCEL] failed to remove task %s from Redis: %v", id, err)
+		if err := uc.inspector.DeleteTask(queue.DefaultQueue, id.String()); err != nil {
+			logger.FromContext(ctx).Warn("failed to remove cancelled task from Redis",
+				"job_id", id.String(), "error", err.Error())
 		}
 	}
 
 	return nil
-}
-
-func jobTypeToTaskType(t entity.JobType) string {
-    switch t {
-    case entity.JobTypeEmail:
-        return queue.TypeEmail
-    case entity.JobTypeSMS:
-        return queue.TypeSMS
-    case entity.JobTypeWebhook:
-        return queue.TypeWebhook
-    case entity.JobTypeReport:
-        return queue.TypeReport
-    default:
-        return string(t)
-    }
 }

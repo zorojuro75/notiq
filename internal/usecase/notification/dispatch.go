@@ -1,45 +1,50 @@
 package notification
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"log"
-	"net/http"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/zorojuro75/notiq/internal/domain/entity"
 	"github.com/zorojuro75/notiq/internal/domain/repository"
-	"github.com/zorojuro75/notiq/pkg/signature"
+	"github.com/zorojuro75/notiq/pkg/logger"
+	"github.com/zorojuro75/notiq/pkg/queue"
 )
 
-type DispatchUseCase struct {
+const webhookDeliveryMaxRetry = 5
+
+// Dispatcher fans a job's terminal-state event out to the owner's registered
+// webhooks. Each delivery is enqueued as its own retryable asynq task rather
+// than delivered inline, so a slow or failing subscriber never blocks job
+// processing and gets independent exponential-backoff retries.
+type Dispatcher struct {
 	webhookRepo repository.WebhookRepository
-	httpClient  *http.Client
+	queueClient *queue.Client
 }
 
-func NewDispatchUseCase(webhookRepo repository.WebhookRepository) *DispatchUseCase {
-	return &DispatchUseCase{
+func NewDispatcher(webhookRepo repository.WebhookRepository, queueClient *queue.Client) *Dispatcher {
+	return &Dispatcher{
 		webhookRepo: webhookRepo,
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+		queueClient: queueClient,
 	}
 }
 
-// Dispatch sends a webhook notification to all registered URLs for a user.
-// Called after a job reaches a terminal state (done, failed, dead).
-func (uc *DispatchUseCase) Dispatch(ctx context.Context, userID uuid.UUID, job *entity.Job) {
-	webhooks, err := uc.webhookRepo.ListByUserID(ctx, userID)
+// DispatchJobEvent enqueues a webhook-delivery task for every webhook the job's
+// owner has registered. It is best-effort and never returns an error: a failure
+// to notify subscribers must not fail the job itself.
+func (d *Dispatcher) DispatchJobEvent(ctx context.Context, job *entity.Job) {
+	if job.UserID == nil {
+		return // job has no owner — nothing to notify
+	}
+
+	log := logger.FromContext(ctx)
+
+	webhooks, err := d.webhookRepo.ListByUserID(ctx, *job.UserID)
 	if err != nil {
-		log.Printf("[DISPATCH] failed to list webhooks for user %s: %v", userID, err)
+		log.Error("dispatch: listing webhooks failed", "user_id", job.UserID.String(), "error", err.Error())
 		return
 	}
-
 	if len(webhooks) == 0 {
 		return
 	}
@@ -48,53 +53,34 @@ func (uc *DispatchUseCase) Dispatch(ctx context.Context, userID uuid.UUID, job *
 		JobID:     job.ID.String(),
 		Type:      string(job.Type),
 		Status:    string(job.Status),
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Timestamp: job.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
 	}
 
-	payload, err := json.Marshal(event)
-	if err != nil {
-		log.Printf("[DISPATCH] failed to marshal event: %v", err)
-		return
-	}
-
-	// deliver to every registered webhook URL
 	for _, wh := range webhooks {
-		go uc.deliver(ctx, wh, payload)
+		payload := queue.WebhookDeliveryPayload{
+			WebhookID: wh.ID.String(),
+			Event:     event,
+		}
+		if err := d.queueClient.Enqueue(queue.TypeWebhookDelivery, payload, queue.EnqueueOptions{
+			MaxRetry: webhookDeliveryMaxRetry,
+		}); err != nil {
+			log.Error("dispatch: enqueuing delivery failed",
+				"webhook_id", wh.ID.String(),
+				"error", err.Error(),
+			)
+			continue
+		}
+		log.Info("dispatch: delivery enqueued",
+			"webhook_id", wh.ID.String(),
+			"status", event.Status,
+		)
 	}
-}
-
-func (uc *DispatchUseCase) deliver(ctx context.Context, wh *entity.Webhook, payload []byte) {
-	sig := signature.Sign(wh.Secret, payload)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, wh.URL, bytes.NewBuffer(payload))
-	if err != nil {
-		log.Printf("[DISPATCH] failed to build request for webhook %s: %v", wh.ID, err)
-		return
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(signature.Header(), sig)
-
-	resp, err := uc.httpClient.Do(req)
-	if err != nil {
-		log.Printf("[DISPATCH] delivery failed for webhook %s url=%s: %v", wh.ID, wh.URL, err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		log.Printf("[DISPATCH] webhook %s url=%s returned %d", wh.ID, wh.URL, resp.StatusCode)
-		return
-	}
-
-	log.Printf("[DISPATCH] webhook %s delivered successfully — status %d", wh.ID, resp.StatusCode)
 }
 
 // GenerateSecret creates a cryptographically random webhook secret.
 func GenerateSecret() (string, error) {
 	b := make([]byte, 32)
-	_, err := rand.Read(b)
-	if err != nil {
+	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("generating secret: %w", err)
 	}
 	return hex.EncodeToString(b), nil

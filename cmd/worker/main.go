@@ -4,15 +4,19 @@ import (
 	"context"
 	"log"
 	"log/slog"
+	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/zorojuro75/notiq/config"
 	"github.com/zorojuro75/notiq/internal/repository/postgres"
+	"github.com/zorojuro75/notiq/internal/usecase/notification"
 	"github.com/zorojuro75/notiq/internal/worker"
 	"github.com/zorojuro75/notiq/internal/worker/handlers"
 	"github.com/zorojuro75/notiq/pkg/logger"
+	"github.com/zorojuro75/notiq/pkg/queue"
 )
 
 func main() {
@@ -39,27 +43,41 @@ func main() {
 
 	// repositories
 	jobRepo := postgres.NewJobRepository(db)
+	webhookRepo := postgres.NewWebhookRepository(db)
+
+	// queue client — used by the dispatcher to enqueue webhook-delivery tasks
+	queueClient := queue.NewClient(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
+	defer queueClient.Close()
+
+	// dispatcher — fans terminal job events out to the owner's webhooks
+	dispatcher := notification.NewDispatcher(webhookRepo, queueClient)
 
 	// handlers
-	emailHandler := handlers.NewEmailHandler(jobRepo)
-	smsHandler := handlers.NewSMSHandler(jobRepo)
-	webhookHandler := handlers.NewWebhookHandler(jobRepo)
-	reportHandler := handlers.NewReportHandler(jobRepo)
+	emailHandler := handlers.NewEmailHandler(jobRepo, dispatcher)
+	smsHandler := handlers.NewSMSHandler(jobRepo, dispatcher)
+	webhookHandler := handlers.NewWebhookHandler(jobRepo, dispatcher)
+	reportHandler := handlers.NewReportHandler(jobRepo, dispatcher)
 
-	// pool
-	pool := worker.NewPool(10, 100)
-	pool.Start()
+	// SSRF guard is on by default; WEBHOOK_ALLOW_PRIVATE=true disables it for
+	// local testing against loopback receivers only.
+	allowPrivate := strings.EqualFold(os.Getenv("WEBHOOK_ALLOW_PRIVATE"), "true")
+	if allowPrivate {
+		slog.Warn("WEBHOOK_ALLOW_PRIVATE enabled — webhook SSRF guard is OFF (dev only)")
+	}
+	deliveryHandler := handlers.NewWebhookDeliveryHandler(webhookRepo, allowPrivate)
 
-	// processor
+	// processor — asynq bounds concurrency itself; no separate worker pool needed
+	const workerConcurrency = 10
 	processor := worker.NewProcessor(
 		cfg.Redis.Addr,
 		cfg.Redis.Password,
 		cfg.Redis.DB,
-		pool,
+		workerConcurrency,
 		emailHandler,
 		smsHandler,
 		webhookHandler,
 		reportHandler,
+		deliveryHandler,
 	)
 
 	if err := processor.Start(); err != nil {
@@ -90,13 +108,11 @@ func main() {
 	go func() {
 		defer close(done)
 
-		slog.Info("step 1/2 — stopping processor")
+		// asynq's Shutdown waits for in-flight handlers to finish and
+		// re-queues anything still running past the deadline.
+		slog.Info("stopping processor — draining in-flight tasks")
 		processor.Shutdown()
-		slog.Info("step 1/2 — processor stopped")
-
-		slog.Info("step 2/2 — draining worker pool")
-		pool.Shutdown()
-		slog.Info("step 2/2 — pool drained")
+		slog.Info("processor stopped")
 	}()
 
 	select {

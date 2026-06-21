@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
+	"github.com/zorojuro75/notiq/internal/domain/entity"
 )
 
 const (
@@ -13,7 +14,19 @@ const (
 	TypeSMS     = "job:sms"
 	TypeWebhook = "job:webhook"
 	TypeReport  = "job:report"
+
+	// TypeWebhookDelivery is an internal task: deliver a job's terminal-state
+	// event to one registered webhook. Each delivery is retried independently.
+	TypeWebhookDelivery = "job:webhook-delivery"
 )
+
+// WebhookDeliveryPayload is the task payload for TypeWebhookDelivery. The
+// secret is never placed on the queue — the delivery handler loads it from the
+// webhook record by ID at send time.
+type WebhookDeliveryPayload struct {
+	WebhookID string                      `json:"webhook_id"`
+	Event     entity.WebhookDeliveryEvent `json:"event"`
+}
 
 type Client struct {
 	asynq *asynq.Client

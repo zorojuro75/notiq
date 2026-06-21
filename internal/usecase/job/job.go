@@ -52,6 +52,7 @@ func (uc *JobUseCase) Enqueue(ctx context.Context, input entity.EnqueueJobInput)
 
 	job := &entity.Job{
 		ID:             uuid.New(),
+		UserID:         input.UserID,
 		Type:           input.Type,
 		Payload:        input.Payload,
 		Status:         entity.JobStatusPending,

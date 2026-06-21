@@ -29,6 +29,7 @@ const (
 
 type Job struct {
     ID             uuid.UUID
+    UserID         *uuid.UUID // owner — when set, terminal events are delivered to this user's webhooks
     Type           JobType
     Payload        json.RawMessage
     Status         JobStatus

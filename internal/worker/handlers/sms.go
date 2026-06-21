@@ -7,6 +7,7 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/zorojuro75/notiq/internal/domain/repository"
+	"github.com/zorojuro75/notiq/internal/usecase/notification"
 	"github.com/zorojuro75/notiq/pkg/apperror"
 )
 
@@ -14,8 +15,8 @@ type SMSHandler struct {
 	BaseHandler
 }
 
-func NewSMSHandler(jobRepo repository.JobRepository) *SMSHandler {
-	return &SMSHandler{BaseHandler: NewBaseHandler(jobRepo)}
+func NewSMSHandler(jobRepo repository.JobRepository, dispatcher *notification.Dispatcher) *SMSHandler {
+	return &SMSHandler{BaseHandler: NewBaseHandler(jobRepo, dispatcher)}
 }
 
 func (h *SMSHandler) Handle(ctx context.Context, task *asynq.Task) error {

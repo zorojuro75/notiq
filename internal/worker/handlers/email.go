@@ -7,6 +7,7 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/zorojuro75/notiq/internal/domain/repository"
+	"github.com/zorojuro75/notiq/internal/usecase/notification"
 	"github.com/zorojuro75/notiq/pkg/apperror"
 	"github.com/zorojuro75/notiq/pkg/logger"
 )
@@ -21,9 +22,9 @@ type EmailHandler struct {
 	BaseHandler
 }
 
-func NewEmailHandler(jobRepo repository.JobRepository) *EmailHandler {
+func NewEmailHandler(jobRepo repository.JobRepository, dispatcher *notification.Dispatcher) *EmailHandler {
 	return &EmailHandler{
-		BaseHandler: NewBaseHandler(jobRepo),
+		BaseHandler: NewBaseHandler(jobRepo, dispatcher),
 	}
 }
 

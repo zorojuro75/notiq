@@ -10,6 +10,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/zorojuro75/notiq/internal/domain/entity"
 	"github.com/zorojuro75/notiq/internal/domain/repository"
+	"github.com/zorojuro75/notiq/internal/usecase/notification"
 	"github.com/zorojuro75/notiq/pkg/apperror"
 	"github.com/zorojuro75/notiq/pkg/logger"
 	"github.com/zorojuro75/notiq/pkg/metrics"
@@ -25,11 +26,21 @@ type TaskPayload struct {
 }
 
 type BaseHandler struct {
-	jobRepo repository.JobRepository
+	jobRepo    repository.JobRepository
+	dispatcher *notification.Dispatcher
 }
 
-func NewBaseHandler(jobRepo repository.JobRepository) BaseHandler {
-	return BaseHandler{jobRepo: jobRepo}
+func NewBaseHandler(jobRepo repository.JobRepository, dispatcher *notification.Dispatcher) BaseHandler {
+	return BaseHandler{jobRepo: jobRepo, dispatcher: dispatcher}
+}
+
+// dispatch notifies the job owner's webhooks of a terminal-state event.
+// Guarded so handlers constructed without a dispatcher (e.g. tests) stay safe.
+func (b *BaseHandler) dispatch(ctx context.Context, job *entity.Job) {
+	if b.dispatcher == nil {
+		return
+	}
+	b.dispatcher.DispatchJobEvent(ctx, job)
 }
 
 func (b *BaseHandler) Prepare(ctx context.Context, task *asynq.Task) (*entity.Job, context.Context, error) {
@@ -74,6 +85,9 @@ func (b *BaseHandler) Complete(ctx context.Context, job *entity.Job) error {
 		return err
 	}
 
+	job.Status = entity.JobStatusDone
+	b.dispatch(ctx, job)
+
 	metrics.RecordJobProcessed(string(job.Type), "done", elapsedSeconds(ctx))
 	return nil
 }
@@ -100,6 +114,9 @@ func (b *BaseHandler) Dead(ctx context.Context, job *entity.Job) error {
 	if err := b.jobRepo.UpdateStatus(ctx, job.ID, entity.JobStatusDead); err != nil {
 		return err
 	}
+
+	job.Status = entity.JobStatusDead
+	b.dispatch(ctx, job)
 
 	metrics.RecordJobProcessed(string(job.Type), "dead", elapsedSeconds(ctx))
 	return nil

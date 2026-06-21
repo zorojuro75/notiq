@@ -12,23 +12,24 @@ import (
 )
 
 type Processor struct {
-	server         *asynq.Server
-	mux            *asynq.ServeMux
-	pool           *Pool
-	emailHandler   *handlers.EmailHandler
-	smsHandler     *handlers.SMSHandler
-	webhookHandler *handlers.WebhookHandler
-	reportHandler  *handlers.ReportHandler
+	server          *asynq.Server
+	mux             *asynq.ServeMux
+	emailHandler    *handlers.EmailHandler
+	smsHandler      *handlers.SMSHandler
+	webhookHandler  *handlers.WebhookHandler
+	reportHandler   *handlers.ReportHandler
+	deliveryHandler *handlers.WebhookDeliveryHandler
 }
 
 func NewProcessor(
 	redisAddr, redisPassword string,
 	redisDB int,
-	pool *Pool,
+	concurrency int,
 	emailHandler *handlers.EmailHandler,
 	smsHandler *handlers.SMSHandler,
 	webhookHandler *handlers.WebhookHandler,
 	reportHandler *handlers.ReportHandler,
+	deliveryHandler *handlers.WebhookDeliveryHandler,
 ) *Processor {
 	srv := asynq.NewServer(
 		asynq.RedisClientOpt{
@@ -37,7 +38,9 @@ func NewProcessor(
 			DB:       redisDB,
 		},
 		asynq.Config{
-			Concurrency: pool.numWorkers,
+			// asynq runs up to Concurrency handler goroutines and bounds
+			// parallelism itself — no separate worker pool is needed.
+			Concurrency: concurrency,
 
 			RetryDelayFunc: func(attempt int, err error, task *asynq.Task) time.Duration {
 				delay := retry.Backoff(attempt)
@@ -62,13 +65,13 @@ func NewProcessor(
 	mux := asynq.NewServeMux()
 
 	p := &Processor{
-		server:         srv,
-		mux:            mux,
-		pool:           pool,
-		emailHandler:   emailHandler,
-		smsHandler:     smsHandler,
-		webhookHandler: webhookHandler,
-		reportHandler:  reportHandler,
+		server:          srv,
+		mux:             mux,
+		emailHandler:    emailHandler,
+		smsHandler:      smsHandler,
+		webhookHandler:  webhookHandler,
+		reportHandler:   reportHandler,
+		deliveryHandler: deliveryHandler,
 	}
 
 	p.registerHandlers()
@@ -76,25 +79,12 @@ func NewProcessor(
 }
 
 func (p *Processor) registerHandlers() {
-	p.mux.HandleFunc(queue.TypeEmail, p.wrap(p.emailHandler))
-	p.mux.HandleFunc(queue.TypeSMS, p.wrap(p.smsHandler))
-	p.mux.HandleFunc(queue.TypeWebhook, p.wrap(p.webhookHandler))
-	p.mux.HandleFunc(queue.TypeReport, p.wrap(p.reportHandler))
-}
-
-func (p *Processor) wrap(h handlers.JobHandler) asynq.HandlerFunc {
-	return func(ctx context.Context, task *asynq.Task) error {
-		var handlerErr error
-
-		done := make(chan struct{})
-		p.pool.Submit(func() {
-			defer close(done)
-			handlerErr = h.Handle(ctx, task)
-		})
-
-		<-done
-		return handlerErr
-	}
+	// Handlers are invoked directly on asynq's worker goroutines.
+	p.mux.HandleFunc(queue.TypeEmail, p.emailHandler.Handle)
+	p.mux.HandleFunc(queue.TypeSMS, p.smsHandler.Handle)
+	p.mux.HandleFunc(queue.TypeWebhook, p.webhookHandler.Handle)
+	p.mux.HandleFunc(queue.TypeReport, p.reportHandler.Handle)
+	p.mux.HandleFunc(queue.TypeWebhookDelivery, p.deliveryHandler.Handle)
 }
 
 func (p *Processor) Start() error {

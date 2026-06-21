@@ -25,6 +25,7 @@ func NewJobHandler(jobUC contracts.JobUseCase) *JobHandler {
 
 type enqueueRequest struct {
 	Type        entity.JobType  `json:"type"         binding:"required"`
+	UserID      *string         `json:"user_id"      binding:"omitempty,uuid"`
 	Payload     json.RawMessage `json:"payload"      binding:"required"`
 	MaxRetries  int             `json:"max_retries"`
 	ScheduledAt *string         `json:"scheduled_at"`
@@ -32,6 +33,7 @@ type enqueueRequest struct {
 
 type jobResponse struct {
 	ID          string `json:"id"`
+	UserID      string `json:"user_id,omitempty"`
 	Type        string `json:"type"`
 	Status      string `json:"status"`
 	RetryCount  int    `json:"retry_count"`
@@ -68,6 +70,17 @@ func (h *JobHandler) Enqueue(c *gin.Context) {
 		Type:       req.Type,
 		Payload:    req.Payload,
 		MaxRetries: req.MaxRetries,
+	}
+
+	// optional owner — when set, terminal job events are delivered to this
+	// user's registered webhooks. binding:"uuid" already validated the format.
+	if req.UserID != nil && *req.UserID != "" {
+		userID, err := uuid.Parse(*req.UserID)
+		if err != nil {
+			response.BadRequest(c, "invalid user_id")
+			return
+		}
+		input.UserID = &userID
 	}
 
 	if key := c.GetHeader("X-Idempotency-Key"); key != "" {
@@ -220,6 +233,9 @@ func toJobResponse(j *entity.Job) jobResponse {
 		MaxRetries: j.MaxRetries,
 		CreatedAt:  j.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:  j.UpdatedAt.Format(time.RFC3339),
+	}
+	if j.UserID != nil {
+		r.UserID = j.UserID.String()
 	}
 	if j.ScheduledAt != nil {
 		r.ScheduledAt = j.ScheduledAt.Format(time.RFC3339)

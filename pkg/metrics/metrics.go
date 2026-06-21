@@ -35,22 +35,6 @@ var (
 		[]string{"type"},
 	)
 
-	// ── worker pool metrics ───────────────────────────────────────
-
-	WorkerPoolActive = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "notiq_worker_pool_active_goroutines",
-			Help: "Number of goroutines currently processing jobs in the pool.",
-		},
-	)
-
-	WorkerPoolQueued = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "notiq_worker_pool_queued_jobs",
-			Help: "Number of jobs currently buffered in the pool channel.",
-		},
-	)
-
 	// ── HTTP metrics ──────────────────────────────────────────────
 
 	HTTPRequestsTotal = promauto.NewCounterVec(

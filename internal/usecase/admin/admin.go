@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
@@ -107,9 +108,10 @@ func (uc *AdminUseCase) RetryDeadJob(ctx context.Context, id uuid.UUID) (*entity
 		},
 		queue.EnqueueOptions{
 			MaxRetry: job.MaxRetries,
-			TaskID:   job.ID.String() + "-retry",
-			// note: append "-retry" to avoid asynq dedup
-			// original task ID may still exist in dead set
+			// A unique TaskID per retry avoids an asynq dedup conflict: the
+			// original task ID may still exist in the dead set, and a fixed
+			// "-retry" suffix would itself collide on a second manual retry.
+			TaskID: fmt.Sprintf("%s-retry-%d", job.ID, time.Now().UnixNano()),
 		},
 	)
 	if err != nil {

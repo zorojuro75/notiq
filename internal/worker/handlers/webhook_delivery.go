@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -19,6 +20,10 @@ import (
 	"github.com/zorojuro75/notiq/pkg/safehttp"
 	"github.com/zorojuro75/notiq/pkg/signature"
 )
+
+// maxResponseBodyBytes caps how much of a webhook receiver's response body we
+// drain for connection reuse. The body content is never used.
+const maxResponseBodyBytes = 64 << 10 // 64 KiB
 
 // WebhookDeliveryHandler delivers a single job event to one registered webhook.
 // Returning an error makes asynq retry the delivery with backoff.
@@ -75,7 +80,14 @@ func (h *WebhookDeliveryHandler) Handle(ctx context.Context, task *asynq.Task) e
 		log.Warn("delivery failed — will retry", "url", wh.URL, "error", err.Error())
 		return fmt.Errorf("delivering to %s: %w", wh.URL, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		// We don't use the response body, but draining a bounded amount lets the
+		// transport reuse the connection; the cap stops a slow/huge body from
+		// tying up the worker. LimitReader bounds memory; the client timeout
+		// bounds time.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBodyBytes))
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode >= 400 {
 		log.Warn("delivery rejected — will retry", "url", wh.URL, "status", resp.StatusCode)

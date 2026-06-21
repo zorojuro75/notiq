@@ -24,6 +24,13 @@ func main() {
 	}
 	logger.Init(cfg.Log.Level, cfg.Log.Format)
 
+	// Admin routes are always mounted behind basic auth. Empty credentials would
+	// leave them effectively unprotected, so refuse to start without them.
+	if cfg.Admin.Username == "" || cfg.Admin.Password == "" {
+		slog.Error("ADMIN_USERNAME and ADMIN_PASSWORD must both be set")
+		os.Exit(1)
+	}
+
 	slog.Info("starting notiq API")
 
 	db, err := config.NewPostgres(&cfg.DB)

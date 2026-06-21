@@ -39,21 +39,21 @@
 
 ## 🟡 Medium — robustness / security hardening
 
-- [ ] **5. Admin basic-auth uses non-constant-time comparison**
+- [x] **5. Admin basic-auth uses non-constant-time comparison** — FIXED 2026-06-21
   `internal/delivery/http/middleware/auth.go:16` — `u != username || p != password`
   is timing-attackable. Use `crypto/subtle.ConstantTimeCompare` / `hmac.Equal`.
 
-- [ ] **6. No validation that `ADMIN_PASSWORD` is set**
+- [x] **6. No validation that `ADMIN_PASSWORD` is set** — FIXED 2026-06-21
   `config/config.go` reads it but never enforces it. An empty configured password
   is a weak admin surface. Fail fast at startup if admin routes are enabled with
   an empty password.
 
-- [ ] **7. `RetryDeadJob` task-ID collision on repeated retries**
+- [x] **7. `RetryDeadJob` task-ID collision on repeated retries** — FIXED 2026-06-21
   `internal/usecase/admin/admin.go:110` hardcodes `id + "-retry"`. Retrying the
   same dead job twice reuses the same asynq TaskID → dedup conflict → re-enqueue
   fails. Use a unique suffix (attempt counter or timestamp).
 
-- [ ] **8. Webhook delivery doesn't drain/cap response body**
+- [x] **8. Webhook delivery doesn't drain/cap response body** — FIXED 2026-06-21
   `internal/worker/handlers/webhook_delivery.go:78` — `resp.Body` is closed but
   never drained/limited; large/slow bodies aren't bounded. Add
   `io.Copy(io.Discard, io.LimitReader(...))` before close for connection reuse.
